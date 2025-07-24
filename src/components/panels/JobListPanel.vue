@@ -269,7 +269,8 @@
                             @view-gcode-runs="onJobDetailsViewGcodeRuns" />
 
         <!-- Create/Edit Job Dialog -->
-        <create-new-job-dialog v-model="createJobDialog.show"
+        <create-new-job-dialog ref="createJobDialog"
+                               v-model="createJobDialog.show"
                                :job="createJobDialog.isEdit ? createJobDialog.job : null"
                                :customers="customers"
                                @job-created="onJobCreated"
@@ -955,6 +956,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         show: false,
         valid: false,
         loading: false,
+        onCustomerAdded: null as ((customer: any) => void) | null,
         form: {
             name: '',
             notes: '',
@@ -1211,40 +1213,106 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     }
 
     openAddCustomerFromJob() {
-        // Open the quick add customer dialog
+        this.quickAddCustomerDialog.onCustomerAdded = (newCustomer: any) => {
+            console.log('🚀 IMMEDIATE auto-selection for:', newCustomer.name)
+
+            // No delays, no checks - just do it immediately
+            const createJobDialogComponent = this.$refs.createJobDialog as any
+            if (createJobDialogComponent?.setSelectedCustomer) {
+                createJobDialogComponent.setSelectedCustomer(newCustomer.id)
+            }
+        }
         this.quickAddCustomerDialog.show = true
     }
 
     async saveQuickCustomer() {
         if (!this.quickAddCustomerDialog.valid) return
-
         this.quickAddCustomerDialog.loading = true
+        let newCustomer: any = null
+
         try {
-            const newCustomer = await this.$store.dispatch('fleet/jobs/createCustomer', this.quickAddCustomerDialog.form)
+            // Create customer via API
+            newCustomer = await this.$store.dispatch('fleet/jobs/createCustomer', this.quickAddCustomerDialog.form)
+            console.log('✅ Customer created successfully:', newCustomer.name)
+
+            // Optimistically add to store immediately
+            this.$store.commit('fleet/jobs/addCustomerOptimistic', newCustomer)
+
+            // IMMEDIATELY trigger auto-selection
+            if (this.quickAddCustomerDialog.onCustomerAdded) {
+                this.quickAddCustomerDialog.onCustomerAdded(newCustomer)
+            }
+
             this.$toast.success('Customer added successfully')
-        
-            // Reload customers to update the dropdown
-            await this.loadCustomers()
-        
-            // Close the quick add dialog
             this.closeQuickAddCustomerDialog()
-        
+
+            // Background verification (don't await this)
+            this.verifyCustomerExists(newCustomer.id, newCustomer.name)
+
         } catch (error) {
-            console.error('Failed to create customer:', error)
+            console.error('❌ Customer creation failed:', error)
             this.$toast.error('Failed to create customer')
+
+            // Remove optimistic customer on API failure
+            if (newCustomer?.id) {
+                this.$store.commit('fleet/jobs/removeCustomerOptimistic', newCustomer.id)
+                this.clearSelectedCustomerIfMatches(newCustomer.id)
+            }
         } finally {
             this.quickAddCustomerDialog.loading = false
+        }
+    }
+
+
+    async verifyCustomerExists(customerId: string, customerName: string) {
+        try {
+            // Wait a moment for server to process, then verify
+            setTimeout(async () => {
+                console.log('🔍 Verifying customer exists on server...')
+
+                await this.loadCustomers()
+
+                const customerExists = this.customers.some(c => c.id === customerId)
+
+                if (!customerExists) {
+                    console.error('❌ Customer verification failed - not found on server')
+
+                    // Remove from store
+                    this.$store.commit('fleet/jobs/removeCustomerOptimistic', customerId)
+
+                    // Clear selection if it matches
+                    this.clearSelectedCustomerIfMatches(customerId)
+
+                    this.$toast.error(`Customer "${customerName}" creation failed - please try again`)
+                } else {
+                    console.log('✅ Customer verified on server')
+                }
+            }, 1000) // Give server a moment to process
+
+        } catch (error) {
+            console.warn('⚠️ Customer verification request failed:', error)
+            // Don't remove customer on network errors
+        }
+    }
+
+    // Helper method to clear selection
+    clearSelectedCustomerIfMatches(customerId: string) {
+        const createJobDialogComponent = this.$refs.createJobDialog as any
+        if (createJobDialogComponent?.jobForm?.customer_id === customerId) {
+            createJobDialogComponent.jobForm.customer_id = ''
+            createJobDialogComponent.$forceUpdate()
+            console.log('🧹 Cleared customer selection due to verification failure')
         }
     }
     
     closeQuickAddCustomerDialog() {
         this.quickAddCustomerDialog.show = false
+        this.quickAddCustomerDialog.onCustomerAdded = null
         this.quickAddCustomerDialog.form = {
             name: '',
             notes: '',
         }
-    
-        // Reset form validation
+
         if (this.$refs.quickCustomerForm) {
             (this.$refs.quickCustomerForm as any).resetValidation()
         }

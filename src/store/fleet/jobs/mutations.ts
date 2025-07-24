@@ -95,5 +95,6 @@ export const mutations: MutationTree<FleetJobsState> = {
     removeCustomersOptimistic(state, customerIds: string[]) {
         const filteredCustomers = state.customers.filter(customer => !customerIds.includes(customer.id))
         Vue.set(state, 'customers', filteredCustomers)
-    }
+    },
+
 }

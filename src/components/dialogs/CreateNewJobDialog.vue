@@ -775,6 +775,45 @@ export default class CreateNewJobDialog extends Mixins(BaseMixin) {
             this.$toast.success(`Added ${gcodeFiles.length} GCode files to job creation`)
         }
     }
+
+    setSelectedCustomer(customerId: string) {
+        console.log('🎯 IMMEDIATELY setting selected customer:', customerId)
+
+        // Set immediately without any checks - optimistic approach
+        this.jobForm.customer_id = customerId
+        console.log('✅ Customer set immediately (optimistic)')
+
+        // Force component update to ensure reactivity
+        this.$forceUpdate()
+
+        // Trigger form validation
+        this.$nextTick(() => {
+            if (this.$refs.jobForm) {
+                (this.$refs.jobForm as any).validate()
+            }
+            console.log('✅ Form validated after customer selection')
+        })
+    }
+
+    @Watch('customers', { immediate: false })
+    onCustomersChanged(newCustomers: FleetCustomer[], oldCustomers: FleetCustomer[]) {
+        const oldCount = oldCustomers?.length || 0
+        const newCount = newCustomers.length
+
+        if (newCount < oldCount) {
+            // A customer was removed (possibly due to background verification failure)
+            console.log('📉 Customer was removed from list, checking current selection...')
+
+            if (this.jobForm.customer_id) {
+                const selectedCustomerExists = newCustomers.some(c => c.id === this.jobForm.customer_id)
+                if (!selectedCustomerExists) {
+                    console.log('🚨 Selected customer no longer exists, clearing selection')
+                    this.jobForm.customer_id = ''
+                    this.$forceUpdate()
+                }
+            }
+        }
+    }
 }
 </script>
 
