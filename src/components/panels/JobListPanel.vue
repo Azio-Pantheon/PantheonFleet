@@ -269,285 +269,12 @@
                             @view-gcode-runs="onJobDetailsViewGcodeRuns" />
 
         <!-- Create/Edit Job Dialog -->
-        <v-dialog v-model="createJobDialog.show"
-                  :max-width="900"
-                  persistent
-                  @keydown.esc="closeCreateJobDialog">
-            <panel :title="createJobDialog.isEdit ? 'Edit Job' : 'Create New Job'"
-                   :icon="createJobDialog.isEdit ? mdiPencil : mdiPlus"
-                   card-class="create-job-dialog"
-                   :margin-bottom="false">
-                <template #buttons>
-                    <v-btn icon tile @click="closeCreateJobDialog">
-                        <v-icon>{{ mdiCloseThick }}</v-icon>
-                    </v-btn>
-                </template>
-                <v-card-text>
-                    <v-form ref="jobForm" v-model="createJobDialog.valid">
-                        <v-row>
-                            <!-- Left Column - Job Details -->
-                            <v-col cols="6">
-                                <h3 class="mb-3">Job Details</h3>
-                                <v-divider class="mb-4" />
-
-                                <v-text-field v-model="createJobDialog.form.name"
-                                              label="Job Name"
-                                              :rules="[v => !!v || 'Job name is required']"
-                                              outlined
-                                              dense
-                                              required />
-
-                                <v-select v-model="createJobDialog.form.customer_id"
-                                          :items="customerDropdownOptions"
-                                          item-text="name"
-                                          item-value="id"
-                                          label="Customer"
-                                          :rules="[v => !!v || 'Customer is required']"
-                                          outlined
-                                          dense
-                                          required
-                                          @change="handleCustomerSelection">
-                                    <template v-slot:prepend-item>
-                                        <v-list-item @click="openAddCustomerFromJob">
-                                            <v-list-item-icon>
-                                                <v-icon color="success">{{ mdiAccountPlus }}</v-icon>
-                                            </v-list-item-icon>
-                                            <v-list-item-content>
-                                                <v-list-item-title class="success--text">Add New Customer...</v-list-item-title>
-                                            </v-list-item-content>
-                                        </v-list-item>
-                                        <v-divider></v-divider>
-                                    </template>
-                                </v-select>
-
-                                <v-row>
-                                    <v-col cols="6">
-                                        <v-select v-model="createJobDialog.form.job_type"
-                                                  :items="jobTypeOptions"
-                                                  label="Job Type"
-                                                  :rules="[v => !!v || 'Job type is required']"
-                                                  outlined
-                                                  dense
-                                                  required />
-                                    </v-col>
-                                    <v-col cols="6">
-                                        <v-select v-model="createJobDialog.form.priority"
-                                                  :items="priorityOptions"
-                                                  item-text="text"
-                                                  item-value="value"
-                                                  label="Priority"
-                                                  outlined
-                                                  dense />
-                                    </v-col>
-                                </v-row>
-
-                                <v-text-field v-model="createJobDialog.form.operator_name"
-                                              label="Operator"
-                                              outlined
-                                              dense />
-
-                                <v-textarea v-model="createJobDialog.form.description"
-                                            label="Description"
-                                            outlined
-                                            dense
-                                            rows="3" />
-
-                                <v-menu v-model="dueDateMenu"
-                                        :close-on-content-click="false"
-                                        :nudge-right="40"
-                                        transition="scale-transition"
-                                        offset-y
-                                        min-width="auto">
-                                    <template v-slot:activator="{ on, attrs }">
-                                        <v-text-field v-model="createJobDialog.form.due_date"
-                                                      label="Due Date"
-                                                      :prepend-icon="mdiCalendar"
-                                                      :rules="[v => !!v || 'Due date is required']"
-                                                      readonly
-                                                      outlined
-                                                      dense
-                                                      clearable
-                                                      required
-                                                      v-bind="attrs"
-                                                      v-on="on" />
-                                    </template>
-                                    <v-date-picker v-model="createJobDialog.form.due_date"
-                                                   @input="dueDateMenu = false" />
-                                </v-menu>
-                            </v-col>
-
-                            <!-- Right Column - GCode Files -->
-                            <v-col cols="6" v-if="!createJobDialog.isEdit">
-                                <div class="d-flex justify-space-between align-center mb-3">
-                                    <h3>GCode Files</h3>
-                                    <div class="text-caption text--secondary">
-                                        {{ createJobDialog.batchGcodes.length }} file(s) selected
-                                    </div>
-                                </div>
-                                <v-divider class="mb-4" />
-
-                                <!-- File Selection Tabs -->
-                                <v-tabs v-model="createJobDialog.activeTab" class="mb-4">
-                                    <v-tab>Upload Files</v-tab>
-                                    <v-tab>Browse Existing</v-tab>
-                                </v-tabs>
-
-                                <v-tabs-items v-model="createJobDialog.activeTab">
-                                    <!-- Upload Tab -->
-                                    <v-tab-item>
-                                        <div class="batch-gcode-upload-zone pa-4 mb-4">
-                                            <div v-if="!createJobDialog.batchUploading && createJobDialog.batchGcodes.length === 0" class="text-center">
-                                                <v-icon size="48" color="primary" class="mb-2">{{ mdiCloudUpload }}</v-icon>
-                                                <div class="text-body-1 mb-3">Upload GCode files for this job</div>
-                                                <v-btn color="primary"
-                                                       large
-                                                       @click="$refs.batchFileInput.click()">
-                                                    <v-icon left>{{ mdiFileUpload }}</v-icon>
-                                                    Choose Files
-                                                </v-btn>
-                                                <input ref="batchFileInput"
-                                                       type="file"
-                                                       accept=".gcode,.g,.gco"
-                                                       multiple
-                                                       style="display: none"
-                                                       @change="onBatchFileSelect" />
-                                                <div class="text-caption text--secondary mt-3">
-                                                    Supported: .gcode, .g, .gco files<br>
-                                                    Auto-parses printer model and filament from filename
-                                                </div>
-                                            </div>
-
-                                            <!-- Upload Progress -->
-                                            <div v-if="createJobDialog.batchUploading" class="text-center">
-                                                <v-icon size="48" color="primary" class="mb-2">{{ mdiCloudUpload }}</v-icon>
-                                                <div class="text-body-1 mb-2">Uploading files...</div>
-                                                <v-progress-linear v-model="createJobDialog.batchUploadProgress"
-                                                                   height="8"
-                                                                   rounded
-                                                                   color="primary"
-                                                                   class="mb-2" />
-                                                <div class="text-caption">{{ Math.round(createJobDialog.batchUploadProgress) }}%</div>
-                                            </div>
-
-                                            <!-- Add More Files Button -->
-                                            <div v-if="!createJobDialog.batchUploading && createJobDialog.batchGcodes.length > 0" class="text-center">
-                                                <v-btn color="primary"
-                                                       outlined
-                                                       @click="$refs.batchFileInput.click()">
-                                                    <v-icon left>{{ mdiPlus }}</v-icon>
-                                                    Add More Files
-                                                </v-btn>
-                                            </div>
-                                        </div>
-                                    </v-tab-item>
-
-                                    <!-- Browse Tab -->
-                                    <v-tab-item>
-                                        <div class="pa-4">
-                                            <gcode-file-browser :key="`create-browse-${createJobDialog.dialogKey}`"
-                                                                :reset-key="createJobDialog.dialogKey"
-                                                                selection-mode="multiple"
-                                                                @files-selected="onBrowseFilesSelected" />
-                                        </div>
-                                    </v-tab-item>
-                                </v-tabs-items>
-
-                                <!-- GCode Files List (shown regardless of tab) -->
-                                <div v-if="createJobDialog.batchGcodes.length > 0" class="batch-gcode-list">
-                                    <div class="d-flex justify-space-between align-center mb-2">
-                                        <div class="text-subtitle-2">Selected Files</div>
-                                        <v-btn small
-                                               text
-                                               color="error"
-                                               @click="clearAllBatchFiles">
-                                            <v-icon small left>{{ mdiDelete }}</v-icon>
-                                            Clear All
-                                        </v-btn>
-                                    </div>
-
-                                    <div class="batch-gcode-items-container" style="max-height: 300px; overflow-y: auto;">
-                                        <div v-for="(gcode, index) in createJobDialog.batchGcodes"
-                                             :key="index"
-                                             class="batch-gcode-item pa-3 mb-2"
-                                             style="border: 1px solid #e0e0e0; border-radius: 8px; background-color: rgba(0,0,0,0.05);">
-                                            <!-- File header -->
-                                            <div class="d-flex justify-space-between align-center mb-2">
-                                                <div class="font-weight-bold text--primary" style="font-size: 14px;">
-                                                    {{ gcode.gcode_filename }}
-                                                </div>
-                                                <v-btn icon
-                                                       x-small
-                                                       color="error"
-                                                       @click="removeBatchGcodeFile(index)"
-                                                       title="Remove file">
-                                                    <v-icon x-small>{{ mdiClose }}</v-icon>
-                                                </v-btn>
-                                            </div>
-
-                                            <!-- Editable fields -->
-                                            <v-row dense>
-                                                <v-col cols="6">
-                                                    <v-text-field v-model.number="gcode.required_runs"
-                                                                  label="Required Runs"
-                                                                  type="number"
-                                                                  :rules="[v => v > 0 || 'Must be > 0']"
-                                                                  outlined
-                                                                  dense
-                                                                  hide-details="auto" />
-                                                </v-col>
-                                                <v-col cols="6">
-                                                    <v-select v-model="gcode.preferred_printer"
-                                                              :items="printerOptions"
-                                                              label="Printer"
-                                                              outlined
-                                                              dense
-                                                              hide-details="auto" />
-                                                </v-col>
-                                                <v-col cols="12">
-                                                    <v-text-field v-model="gcode.filament_type"
-                                                                  label="Filament Type"
-                                                                  :rules="[v => !!v || 'Filament type is required']"
-                                                                  outlined
-                                                                  dense
-                                                                  required
-                                                                  hide-details="auto" />
-                                                </v-col>
-                                            </v-row>
-
-                                            <!-- Auto-parsed info chips -->
-                                            <div class="mt-2">
-                                                <v-chip x-small color="blue" text-color="white" class="mr-1">
-                                                    {{ gcode.filament_type || 'Unknown' }}
-                                                </v-chip>
-                                                <v-chip x-small color="orange" text-color="white" class="mr-1">
-                                                    {{ gcode.required_runs }} runs
-                                                </v-chip>
-                                                <v-chip x-small color="green" text-color="white">
-                                                    {{ gcode.preferred_printer || 'Any' }}
-                                                </v-chip>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </v-col>
-                        </v-row>
-                    </v-form>
-                </v-card-text>
-                <v-card-actions>
-                    <v-spacer />
-                    <v-btn color="" text @click="closeCreateJobDialog">Cancel</v-btn>
-                    <v-btn color="primary"
-                           :loading="createJobDialog.loading"
-                           :disabled="!createJobDialog.valid"
-                           @click="saveJob">
-                        {{ createJobDialog.isEdit ? 'Update' : 'Create' }}
-                        <span v-if="!createJobDialog.isEdit && createJobDialog.batchGcodes.length > 0">
-                            (+ {{ createJobDialog.batchGcodes.length }} GCode files)
-                        </span>
-                    </v-btn>
-                </v-card-actions>
-            </panel>
-        </v-dialog>
+        <create-new-job-dialog v-model="createJobDialog.show"
+                               :job="createJobDialog.isEdit ? createJobDialog.job : null"
+                               :customers="customers"
+                               @job-created="onJobCreated"
+                               @job-updated="onJobUpdated"
+                               @add-customer="openAddCustomerFromJob" />
 
         <!-- Add GCode Dialog -->
         <v-dialog v-model="addGcodeDialog.show"
@@ -1282,6 +1009,7 @@ import Panel from '@/components/ui/Panel.vue'
 import { caseInsensitiveSort } from '@/plugins/helpers'
 import GcodeFileBrowser from '@/components/GcodeFileBrowser.vue'
 import JobDetailsDialog from '@/components/dialogs/JobDetailsDialog.vue'
+import CreateNewJobDialog from '@/components/dialogs/CreateNewJobDialog.vue'
 
 import {
     mdiBriefcaseOutline,
@@ -1375,6 +1103,7 @@ interface BatchGcodeFile {
         Panel,
         GcodeFileBrowser,
         JobDetailsDialog,
+        CreateNewJobDialog,
     },
 })
 export default class JobListPanel extends Mixins(BaseMixin) {
@@ -1457,22 +1186,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     private createJobDialog = {
         show: false,
         isEdit: false,
-        valid: false,
-        loading: false,
-        batchGcodes: [] as BatchGcodeFile[],
-        batchUploading: false,
-        batchUploadProgress: 0,
-        activeTab: 0,
-        form: {
-            id: '',
-            name: '',
-            customer_id: '',
-            job_type: 'sample',
-            priority: 'low',
-            operator_name: '',
-            description: '',
-            due_date: '',
-        }
+        job: null as FleetJob | null,
     }
 
     private addGcodeDialog = {
@@ -1676,7 +1390,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
             }
         
             if (requiredPrinterModel === 'HS3') {
-                return printerModel === 'HS-3' || printerModel === 'HS3'
+                return printerModel === 'HS3'
             }
         
             // Default: show all if we can't determine requirements
@@ -1715,7 +1429,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         })
     }
 
-    getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
+    getPrinterModel(hostname: string): 'HS3' | 'HS-Pro' | null {
         const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
         for (const printer of Object.values(remotePrinters)) {
             if ((printer as any).hostname === hostname) {
@@ -1774,9 +1488,6 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         
             // Reload customers to update the dropdown
             await this.loadCustomers()
-        
-            // Auto-select the newly created customer in the job form
-            this.createJobDialog.form.customer_id = newCustomer.id
         
             // Close the quick add dialog
             this.closeQuickAddCustomerDialog()
@@ -2077,23 +1788,8 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     }
 
     editJob(item: FleetJob) {
-        // Clear any existing batch data since edit mode doesn't use batch upload
-        this.createJobDialog.batchGcodes = []
-        this.createJobDialog.batchUploading = false
-        this.createJobDialog.batchUploadProgress = 0
-        this.createJobDialog.activeTab = 0
-
         this.createJobDialog.isEdit = true
-        this.createJobDialog.form = {
-            id: item.id,
-            name: item.name,
-            customer_id: item.customer_id,
-            job_type: item.job_type,
-            priority: item.priority,
-            operator_name: item.operator_name || '',
-            description: item.description || '',
-            due_date: item.due_date ? item.due_date.split('T')[0] : '',
-        }
+        this.createJobDialog.job = item
         this.createJobDialog.show = true
     }
 
@@ -2109,105 +1805,14 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     }
 
     openCreateJobDialog() {
-        // Ensure clean state when opening for create
         this.createJobDialog.isEdit = false
-        this.createJobDialog.batchGcodes = []
-        this.createJobDialog.batchUploading = false
-        this.createJobDialog.batchUploadProgress = 0
-        this.createJobDialog.activeTab = 0
-        this.createJobDialog.loading = false
-
-        // Clear form
-        this.createJobDialog.form = {
-            id: '',
-            name: '',
-            customer_id: '',
-            job_type: 'sample',
-            priority: 'low',
-            operator_name: '',
-            description: '',
-            due_date: '',
-        }
-
+        this.createJobDialog.job = null
         this.createJobDialog.show = true
     }
 
     openAddGcodeDialog() {
         this.addGcodeDialog.show = true
         this.addGcodeDialog.isEdit = false
-    }
-
-    // Replace your existing saveJob method with this updated version:
-    async saveJob() {
-        if (!this.createJobDialog.valid) return;
-        this.createJobDialog.loading = true;
-
-        try {
-            // Copy form data and normalize the date
-            const raw = { ...this.createJobDialog.form };
-            if (raw.due_date) {
-                raw.due_date = new Date(raw.due_date).toISOString();
-            }
-
-            let savedJob = null;
-
-            if (this.createJobDialog.isEdit) {
-                // EDIT: pull out id, keep the rest
-                const { id: jobId, ...jobData } = raw;
-
-                savedJob = await this.$store.dispatch('fleet/jobs/updateJob', {
-                    jobId,
-                    jobData,
-                });
-                this.$toast.success('Job updated successfully');
-
-            } else {
-                // CREATE: drop id entirely
-                const { id: _, ...jobData } = raw;
-
-                // Create the job
-                savedJob = await this.$store.dispatch('fleet/jobs/createJob', jobData);
-                this.$toast.success('Job created successfully');
-
-                // STORE BATCH DATA BEFORE CLOSING DIALOG
-                const batchGcodesToCreate = [...this.createJobDialog.batchGcodes];
-
-                // Close dialog immediately after job creation
-                this.closeCreateJobDialog();
-
-                // Do GCode creation and refresh in background
-                if (batchGcodesToCreate.length > 0) {
-                    console.log('🔧 Creating batch GCodes:', batchGcodesToCreate);
-                    this.createBatchGcodeFilesInBackground(savedJob.id, batchGcodesToCreate);
-                } else {
-                    console.log('❌ No batch GCodes to create');
-                    // Still refresh jobs list, but in background
-                    this.refreshJobsInBackground();
-                }
-
-                return; // Exit early for new jobs
-            }
-
-            // Only for edits: refresh details if open
-            if (
-                this.detailsDialog.show &&
-                this.detailsDialog.item &&
-                this.detailsDialog.item.id === savedJob?.id
-            ) {
-                await this.loadJobGcodesAndRuns(this.detailsDialog.item.id);
-            }
-
-            await this.refreshJobs();
-            this.closeCreateJobDialog();
-
-        } catch (error) {
-            console.error('Failed to save job:', error);
-            this.$toast.error(
-                `Failed to ${this.createJobDialog.isEdit ? 'update' : 'create'} job`
-            );
-        } finally {
-            this.createJobDialog.loading = false;
-        }
     }
 
     openActionsMenu(event: Event, item: FleetJob) {
@@ -2695,37 +2300,6 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         return stats
     }
 
-    closeCreateJobDialog() {
-        this.createJobDialog.show = false
-        this.createJobDialog.isEdit = false
-        this.createJobDialog.loading = false
-
-        // Clear all batch-related state
-        this.createJobDialog.batchGcodes = []
-        this.createJobDialog.batchUploading = false
-        this.createJobDialog.batchUploadProgress = 0
-        this.createJobDialog.activeTab = 0 // Reset to upload tab
-
-        // Clear form data
-        this.createJobDialog.form = {
-            id: '',
-            name: '',
-            customer_id: '',
-            job_type: 'sample',
-            priority: 'low',
-            operator_name: '',
-            description: '',
-            due_date: '',
-        }
-
-        // Reset form validation
-        if (this.$refs.jobForm) {
-            (this.$refs.jobForm as any).resetValidation()
-        }
-
-        console.log('✅ Create job dialog closed and state cleared')
-    }
-
     get highPriorityJobsCount(): number {
         return this.jobs.filter((job: FleetJob) => job.priority === 'high').length
     }
@@ -3190,370 +2764,9 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         return selectedOption?.printerFilament || 'None detected'
     }
 
-    // Handle batch file selection from upload button
-    async onBatchFileSelect(e: Event) {
-        const target = e.target as HTMLInputElement
-        const files = target.files
-        if (files && files.length > 0) {
-            await this.handleBatchFileUpload(Array.from(files))
-        }
-        target.value = ''
-    }
-
-    // Handle batch file upload
-    async handleBatchFileUpload(files: File[]) {
-        // Validate file types
-        const validExtensions = ['.gcode', '.g', '.gco']
-        const validFiles = files.filter(file => {
-            const fileExtension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-            return validExtensions.includes(fileExtension)
-        })
-
-        if (validFiles.length !== files.length) {
-            this.$toast.error(`${files.length - validFiles.length} files skipped (invalid format)`)
-        }
-
-        if (validFiles.length === 0) {
-            this.$toast.error('No valid GCode files selected')
-            return
-        }
-
-        // Start batch upload
-        this.createJobDialog.batchUploading = true
-        this.createJobDialog.batchUploadProgress = 0
-
-        try {
-            const successfullyUploadedFiles = []
-
-            // Upload files one by one to better handle errors
-            for (let i = 0; i < validFiles.length; i++) {
-                const file = validFiles[i]
-                try {
-                    const uploadedFilename = await this.$store.dispatch('files/uploadFile', {
-                        file: file,
-                        path: '', // Upload to root of gcodes directory
-                        root: 'gcodes'
-                    })
-
-                    if (uploadedFilename) {
-                        // Only add successfully uploaded files
-                        successfullyUploadedFiles.push({
-                            name: uploadedFilename,
-                            originalFile: file
-                        })
-                        this.$toast.success(`Uploaded: ${uploadedFilename}`)
-                    } else {
-                        this.$toast.error(`Failed to upload: ${file.name}`)
-                    }
-
-                } catch (error) {
-                    console.error(`Failed to upload ${file.name}:`, error)
-                    this.$toast.error(`Upload failed: ${file.name}`)
-                }
-
-                // Update progress
-                this.createJobDialog.batchUploadProgress = ((i + 1) / validFiles.length) * 100
-            }
-
-            // Only process successfully uploaded files
-            if (successfullyUploadedFiles.length > 0) {
-                const filesToProcess = successfullyUploadedFiles.map(result => {
-                    // Create a proper File object with the uploaded filename
-                    const mockFile = new File([''], result.name, { type: 'text/plain' })
-                    return mockFile
-                })
-            
-                this.processBatchGcodeFiles(filesToProcess)
-                this.$toast.success(`Successfully processed ${successfullyUploadedFiles.length} GCode files`)
-            }
-
-            // Report overall results
-            const failedCount = validFiles.length - successfullyUploadedFiles.length
-            if (failedCount > 0) {
-                this.$toast.error(`${failedCount} files failed to upload`)
-            }
-
-        } catch (error) {
-            console.error('Batch upload failed:', error)
-            this.$toast.error('Batch upload failed')
-        } finally {
-            this.createJobDialog.batchUploading = false
-            this.createJobDialog.batchUploadProgress = 0
-        }
-    }
-
-    // Process batch GCode files (from drag/drop or manual selection)
-    processBatchGcodeFiles(files: File[]) {
-        console.log('🔧 Processing batch GCode files:', files.length)
-
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i]
-            const parsed = this.parseGcodeFilename(file.name)
-
-            const batchFile = {
-                gcode_filename: file.name,
-                required_runs: parsed.required_runs,
-                preferred_printer: parsed.preferred_printer,
-                filament_type: parsed.filament_type, // This might be empty and needs user input
-                originalFile: file
-            }
-
-            this.createJobDialog.batchGcodes.push(batchFile)
-        }
-
-        // Show a warning if any files have empty filament types
-        const emptyFilamentFiles = this.createJobDialog.batchGcodes.filter(f => !f.filament_type.trim())
-        if (emptyFilamentFiles.length > 0) {
-            this.$toast.warning(`${emptyFilamentFiles.length} file(s) need filament type specified`)
-        }
-
-        this.$toast.success(`Added ${files.length} files. Please review and fill in any missing information.`)
-    }
-
-    // Remove a file from batch GCode list
-    removeBatchGcodeFile(index: number) {
-        this.createJobDialog.batchGcodes.splice(index, 1)
-    }
-
-    // Clear all batch files
-    clearAllBatchFiles() {
-        this.createJobDialog.batchGcodes = []
-    }
-
-    // Create batch GCode files after job creation
-    async createBatchGcodeFiles(jobId: string) {
-        if (this.createJobDialog.batchGcodes.length === 0) {
-            console.log('No batch GCode files to create')
-            return
-        }
-
-        console.log(`Creating ${this.createJobDialog.batchGcodes.length} GCode files for job ${jobId}:`, this.createJobDialog.batchGcodes)
-        this.$toast.info(`Creating ${this.createJobDialog.batchGcodes.length} GCode files...`)
-    
-        let successCount = 0
-        let failCount = 0
-
-        for (const gcodeFile of this.createJobDialog.batchGcodes) {
-            try {
-                console.log(`Creating GCode file: ${gcodeFile.gcode_filename}`, gcodeFile)
-            
-                const result = await this.$store.dispatch('fleet/jobs/createJobGcode', {
-                    jobId: jobId,
-                    gcode: {
-                        gcode_filename: gcodeFile.gcode_filename,
-                        required_runs: gcodeFile.required_runs,
-                        preferred_printer: gcodeFile.preferred_printer,
-                        filament_type: gcodeFile.filament_type
-                    }
-                })
-            
-                console.log(`Successfully created GCode file: ${gcodeFile.gcode_filename}`, result)
-                successCount++
-            
-            } catch (error) {
-                console.error(`Failed to create GCode file ${gcodeFile.gcode_filename}:`, error)
-                this.$toast.error(`Failed to create GCode file: ${gcodeFile.gcode_filename}`)
-                failCount++
-            }
-        }
-
-        // Report results
-        if (successCount > 0) {
-            this.$toast.success(`Successfully created ${successCount} GCode files`)
-        }
-        if (failCount > 0) {
-            this.$toast.error(`Failed to create ${failCount} GCode files`)
-        }
-
-        console.log(`Batch GCode creation completed: ${successCount} success, ${failCount} failed`)
-    }
-
-    // Parse filename to extract printer model and filament type
-    parseGcodeFilename(filename: string) {
-        const filenameLower = filename.toLowerCase()
-    
-        // Determine printer model
-        let preferred_printer = 'any'
-        if (filenameLower.includes('hs-pro') || filenameLower.includes('hspro')) {
-            preferred_printer = 'HS-Pro'
-        } else if (filenameLower.includes('hs3') || filenameLower.includes('hs-3')) {
-            preferred_printer = 'HS3'
-        }
-
-        // Determine filament type
-        let filament_type = ''
-        if (filenameLower.includes('pa-cf') || filenameLower.includes('pacf')) {
-            filament_type = 'PA-CF'
-        } else if (filenameLower.includes('petg-cf') || filenameLower.includes('petgcf')) {
-            filament_type = 'PETG-CF'
-        } else if (filenameLower.includes('pa-gf') || filenameLower.includes('pagf')) {
-            filament_type = 'PA-GF'
-        } else if (filenameLower.includes('petg')) {
-            filament_type = 'PETG'
-        } else if (filenameLower.includes('pla')) {
-            filament_type = 'PLA'
-        } else if (filenameLower.includes('abs')) {
-            filament_type = 'ABS'
-        } else if (filenameLower.includes('tpu')) {
-            filament_type = 'TPU'
-        }
-
-        // Default required runs based on job type or filename
-        let required_runs = 1
-        const quantityMatch = filename.match(/(?:x|qty|quantity|runs?)[_\s]*(\d+)/i)
-        if (quantityMatch) {
-            required_runs = parseInt(quantityMatch[1])
-        }
-
-        return {
-            preferred_printer,
-            filament_type,
-            required_runs
-        }
-    }
-
     handleFullscreenUpload(uploadedFiles: any[]) {
-        console.log('🎯 handleFullscreenUpload called with files:', uploadedFiles)
-        console.log('🎯 createJobDialog.show:', this.createJobDialog.show)
-        console.log('🎯 createJobDialog.isEdit:', this.createJobDialog.isEdit)
 
-        // Only handle if create job dialog is open and not in edit mode
-        if (!this.createJobDialog.show || this.createJobDialog.isEdit) {
-            console.log('❌ Dialog not open or in edit mode, skipping')
-            return
-        }
-
-        // Filter for GCode files based on extension only
-        const gcodeFiles = uploadedFiles.filter(file => {
-            const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-            return ['.gcode', '.g', '.gco'].includes(ext)
-        })
-
-        console.log('✅ Found gcode files:', gcodeFiles)
-
-        if (gcodeFiles.length > 0) {
-            // Convert to File objects for processing
-            const filesToProcess = gcodeFiles.map(fileInfo => {
-                return new File([''], fileInfo.name, { type: 'text/plain' })
-            })
-        
-            console.log('🔧 Processing files:', filesToProcess)
-            this.processBatchGcodeFiles(filesToProcess)
-            this.$toast.success(`Added ${gcodeFiles.length} GCode files to job creation`)
-        } else {
-            console.log('❌ No gcode files found in upload')
-        }
     }
-
-    async createBatchGcodeFilesInBackground(jobId: string, batchGcodes: any[]) {
-        if (batchGcodes.length === 0) return
-        this.$toast.info(`Creating ${batchGcodes.length} GCode files...`)
-
-        try {
-            // Prepare batch data with validation
-            const gcodeFiles = batchGcodes.map((gcodeFile, index) => {
-                console.log(`🔍 Processing file ${index + 1}:`, gcodeFile)
-                // Ensure all required fields are present and valid
-                const processedFile = {
-                    gcode_filename: String(gcodeFile.gcode_filename || '').trim(),
-                    required_runs: Number(gcodeFile.required_runs) || 1,
-                    preferred_printer: String(gcodeFile.preferred_printer || 'any').trim(),
-                    filament_type: String(gcodeFile.filament_type || '').trim()
-                }
-                console.log(`✅ Processed file ${index + 1}:`, processedFile)
-                // Validate required fields
-                if (!processedFile.gcode_filename) {
-                    throw new Error(`File ${index + 1}: Missing filename`)
-                }
-                if (!processedFile.filament_type) {
-                    throw new Error(`File ${index + 1}: Missing filament type`)
-                }
-                if (processedFile.required_runs <= 0) {
-                    throw new Error(`File ${index + 1}: Invalid required runs`)
-                }
-                if (!['HS-Pro', 'HS3', 'any'].includes(processedFile.preferred_printer)) {
-                    throw new Error(`File ${index + 1}: Invalid printer preference`)
-                }
-                return processedFile
-            })
-
-            console.log('🔧 Final batch data:', { jobId, gcodeFiles })
-
-            // Single batch API call
-            const result = await this.$store.dispatch('fleet/jobs/createJobGcodesBatch', {
-                jobId: jobId,
-                gcodeFiles: gcodeFiles
-            })
-
-            console.log('✅ Batch creation result:', result)
-
-            // Handle results
-            if (result.created_count > 0) {
-                this.$toast.success(`✅ Successfully created ${result.created_count} GCode files`)
-            }
-
-            if (result.failed_count > 0) {
-                this.$toast.error(`❌ Failed to create ${result.failed_count} GCode files`)
-                result.errors.forEach((error: any) => {
-                    console.error('GCode creation error:', error)
-                })
-            }
-
-        } catch (error: unknown) {
-            console.error('❌ Batch GCode creation failed:', error)
-
-            // Type-safe error handling
-            const errorMessage = this.getErrorMessage(error)
-            const responseDetail = this.getResponseDetail(error)
-
-            console.error('❌ Error response:', responseDetail)
-            this.$toast.error('Batch GCode creation failed: ' + (responseDetail || errorMessage))
-
-        } finally {
-            await this.refreshJobsInBackground()
-        }
-    }
-
-    // Helper method for type-safe error message extraction
-    private getErrorMessage(error: unknown): string {
-        if (error instanceof Error) {
-            return error.message
-        }
-        if (typeof error === 'string') {
-            return error
-        }
-        return 'Unknown error occurred'
-    }
-
-    // Helper method for type-safe response detail extraction
-    private getResponseDetail(error: unknown): string | null {
-        // Check if it's an axios-like error with response.data.detail
-        if (
-            error &&
-            typeof error === 'object' &&
-            'response' in error &&
-            error.response &&
-            typeof error.response === 'object' &&
-            'data' in error.response &&
-            error.response.data &&
-            typeof error.response.data === 'object' &&
-            'detail' in error.response.data
-        ) {
-            return String((error.response.data as any).detail)
-        }
-        return null
-    }
-
-    async refreshJobsInBackground() {
-        try {
-            await this.refreshJobs()
-            console.log('✅ Jobs list refreshed in background')
-        } catch (error) {
-            console.error('Background refresh failed:', error)
-            this.$toast.error('Failed to refresh jobs list')
-        }
-    }
-
 
     onBrowseFileSelected(files: any[]) {
         if (files.length === 1) {
@@ -3598,26 +2811,45 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         }
     }
 
-    onBrowseFilesSelected(files: any[]) {
-        // Process selected files for batch creation
-        const processedFiles = files.map(file => {
-            const parsed = this.parseGcodeFilename(file.filename)
-            return {
-                gcode_filename: file.filename,
-                required_runs: parsed.required_runs,
-                preferred_printer: parsed.preferred_printer,
-                filament_type: parsed.filament_type,
-                originalFile: null // Since these are existing files
-            }
-        })
 
-        // Add to batch (or replace existing)
-        this.createJobDialog.batchGcodes = [
-            ...this.createJobDialog.batchGcodes,
-            ...processedFiles
-        ]
+    // Helper method for type-safe error message extraction
+    private getErrorMessage(error: unknown): string {
+        if (error instanceof Error) {
+            return error.message
+        }
+        if (typeof error === 'string') {
+            return error
+        }
+        return 'Unknown error occurred'
+    }
 
-        this.$toast.success(`Added ${files.length} file(s) to job creation`)
+    // Helper method for type-safe response detail extraction
+    private getResponseDetail(error: unknown): string | null {
+        // Check if it's an axios-like error with response.data.detail
+        if (
+            error &&
+            typeof error === 'object' &&
+            'response' in error &&
+            error.response &&
+            typeof error.response === 'object' &&
+            'data' in error.response &&
+            error.response.data &&
+            typeof error.response.data === 'object' &&
+            'detail' in error.response.data
+        ) {
+            return String((error.response.data as any).detail)
+        }
+        return null
+    }
+
+    async refreshJobsInBackground() {
+        try {
+            await this.refreshJobs()
+            console.log('✅ Jobs list refreshed in background')
+        } catch (error) {
+            console.error('Background refresh failed:', error)
+            this.$toast.error('Failed to refresh jobs list')
+        }
     }
 
     onJobDetailsClose() {
@@ -3704,6 +2936,143 @@ export default class JobListPanel extends Mixins(BaseMixin) {
             this.detailsDialog.show = visible
         }
     }
+    // Parse filename to extract printer model and filament type
+    parseGcodeFilename(filename: string) {
+        const filenameLower = filename.toLowerCase()
+
+        // Determine printer model
+        let preferred_printer = 'any'
+        if (filenameLower.includes('hs-pro') || filenameLower.includes('hspro')) {
+            preferred_printer = 'HS-Pro'
+        } else if (filenameLower.includes('hs3') || filenameLower.includes('hs-3')) {
+            preferred_printer = 'HS3'
+        }
+
+        // Determine filament type
+        let filament_type = ''
+        if (filenameLower.includes('pa-cf') || filenameLower.includes('pacf')) {
+            filament_type = 'PA-CF'
+        } else if (filenameLower.includes('petg-cf') || filenameLower.includes('petgcf')) {
+            filament_type = 'PETG-CF'
+        } else if (filenameLower.includes('pa-gf') || filenameLower.includes('pagf')) {
+            filament_type = 'PA-GF'
+        } else if (filenameLower.includes('petg')) {
+            filament_type = 'PETG'
+        } else if (filenameLower.includes('pla')) {
+            filament_type = 'PLA'
+        } else if (filenameLower.includes('abs')) {
+            filament_type = 'ABS'
+        } else if (filenameLower.includes('tpu')) {
+            filament_type = 'TPU'
+        }
+
+        // Default required runs based on job type or filename
+        let required_runs = 1
+        const quantityMatch = filename.match(/(?:x|qty|quantity|runs?)[_\s]*(\d+)/i)
+        if (quantityMatch) {
+            required_runs = parseInt(quantityMatch[1])
+        }
+
+        return {
+            preferred_printer,
+            filament_type,
+            required_runs
+        }
+    }
+
+    async createBatchGcodeFilesInBackground(jobId: string, batchGcodes: any[]) {
+        if (batchGcodes.length === 0) return
+        this.$toast.info(`Creating ${batchGcodes.length} GCode files...`)
+
+        try {
+            // Prepare batch data with validation
+            const gcodeFiles = batchGcodes.map((gcodeFile, index) => {
+                console.log(`🔍 Processing file ${index + 1}:`, gcodeFile)
+                // Ensure all required fields are present and valid
+                const processedFile = {
+                    gcode_filename: String(gcodeFile.gcode_filename || '').trim(),
+                    required_runs: Number(gcodeFile.required_runs) || 1,
+                    preferred_printer: String(gcodeFile.preferred_printer || 'any').trim(),
+                    filament_type: String(gcodeFile.filament_type || '').trim()
+                }
+                console.log(`✅ Processed file ${index + 1}:`, processedFile)
+                // Validate required fields
+                if (!processedFile.gcode_filename) {
+                    throw new Error(`File ${index + 1}: Missing filename`)
+                }
+                if (!processedFile.filament_type) {
+                    throw new Error(`File ${index + 1}: Missing filament type`)
+                }
+                if (processedFile.required_runs <= 0) {
+                    throw new Error(`File ${index + 1}: Invalid required runs`)
+                }
+                if (!['HS-Pro', 'HS3', 'any'].includes(processedFile.preferred_printer)) {
+                    throw new Error(`File ${index + 1}: Invalid printer preference`)
+                }
+                return processedFile
+            })
+
+            console.log('🔧 Final batch data:', { jobId, gcodeFiles })
+
+            // Single batch API call
+            const result = await this.$store.dispatch('fleet/jobs/createJobGcodesBatch', {
+                jobId: jobId,
+                gcodeFiles: gcodeFiles
+            })
+
+            console.log('✅ Batch creation result:', result)
+
+            // Handle results
+            if (result.created_count > 0) {
+                this.$toast.success(`✅ Successfully created ${result.created_count} GCode files`)
+            }
+
+            if (result.failed_count > 0) {
+                this.$toast.error(`❌ Failed to create ${result.failed_count} GCode files`)
+                result.errors.forEach((error: any) => {
+                    console.error('GCode creation error:', error)
+                })
+            }
+
+        } catch (error: unknown) {
+            console.error('❌ Batch GCode creation failed:', error)
+
+            // Type-safe error handling
+            const errorMessage = this.getErrorMessage(error)
+            const responseDetail = this.getResponseDetail(error)
+
+            console.error('❌ Error response:', responseDetail)
+            this.$toast.error('Batch GCode creation failed: ' + (responseDetail || errorMessage))
+
+        } finally {
+            await this.refreshJobsInBackground()
+        }
+    }
+
+    async onJobCreated(data: { job: FleetJob, batchGcodes: any[] }) {
+        console.log('🎉 Job created:', data.job)
+
+        // Handle batch GCode creation in background
+        if (data.batchGcodes.length > 0) {
+            console.log('🔧 Creating batch GCodes:', data.batchGcodes)
+            this.createBatchGcodeFilesInBackground(data.job.id, data.batchGcodes)
+        } else {
+            // Just refresh jobs list
+            this.refreshJobsInBackground()
+        }
+    }
+
+    async onJobUpdated(job: FleetJob) {
+        console.log('✏️ Job updated:', job)
+
+        // If the details dialog is open and showing the same job, update it
+        if (this.detailsDialog.show && this.detailsDialog.item &&
+            this.detailsDialog.item.id === job.id) {
+            await this.loadJobGcodesAndRuns(this.detailsDialog.item.id)
+        }
+
+        await this.refreshJobs()
+    }
 
     @Watch('allJobRuns', { deep: true })
     onAllJobRunsChanged() {
@@ -3714,25 +3083,6 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         this.cacheCleanupTimeout = window.setTimeout(() => {
             this.runStatisticsCache = {}
         }, 100)
-    }
-    @Watch('createJobDialog.show')
-    onCreateJobDialogToggle(newVal: boolean, oldVal: boolean) {
-        // If dialog was closed (show changed from true to false) and it wasn't via our closeCreateJobDialog method
-        if (oldVal === true && newVal === false) {
-            // Ensure cleanup happens even if closed via ESC or clicking outside
-            this.$nextTick(() => {
-                if (!this.createJobDialog.show) {
-                    // Clear batch data
-                    this.createJobDialog.batchGcodes = []
-                    this.createJobDialog.batchUploading = false
-                    this.createJobDialog.batchUploadProgress = 0
-                    this.createJobDialog.activeTab = 0
-                    this.createJobDialog.loading = false
-
-                    console.log('✅ Dialog closed via v-model, state cleaned up')
-                }
-            })
-        }
     }
 
     beforeDestroy() {
