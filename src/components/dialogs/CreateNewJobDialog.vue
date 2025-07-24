@@ -269,8 +269,7 @@
                 <v-btn color="" text @click="closeDialog">Cancel</v-btn>
                 <v-btn color="primary"
                        :loading="loading"
-                       :disabled="!formValid"
-                       @click="saveJob">
+                       @click="handleCreateClick">
                     {{ isEdit ? 'Update' : 'Create' }}
                     <span v-if="!isEdit && batchGcodes.length > 0">
                         (+ {{ batchGcodes.length }} GCode files)
@@ -792,6 +791,23 @@ export default class CreateNewJobDialog extends Mixins(BaseMixin) {
                 (this.$refs.jobForm as any).validate()
             }
             console.log('✅ Form validated after customer selection')
+        })
+    }
+
+    handleCreateClick() {
+        // Force validate all fields
+        if (this.$refs.jobForm) {
+            (this.$refs.jobForm as any).validate()
+        }
+
+        // Wait for validation to complete, then check if valid
+        this.$nextTick(() => {
+            if (this.formValid) {
+                this.saveJob()
+            } else {
+                // Show a helpful message
+                this.$toast.warning('Please fill in all required fields (marked in red)')
+            }
         })
     }
 

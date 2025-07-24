@@ -240,8 +240,8 @@
                 <v-btn color="" text @click="closeDialog">Cancel</v-btn>
                 <v-btn color="primary"
                        :loading="loading"
-                       :disabled="!canSave"
-                       @click="saveGcode">
+                       :disabled="uploading"
+                       @click="handleSaveClick">
                     {{ saveButtonText }}
                 </v-btn>
             </v-card-actions>
@@ -716,6 +716,50 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
             preferred_printer,
             filament_type,
             required_runs
+        }
+    }
+
+    handleSaveClick() {
+        // Prevent action if uploading
+        if (this.uploading) {
+            return
+        }
+
+        if (this.isBatchMode) {
+            // Batch mode validation
+            if (this.batchGcodes.length === 0) {
+                this.$toast.warning('Please select at least one GCode file')
+                return
+            }
+
+            // Check if all batch files have required fields
+            const invalidFiles = this.batchGcodes.filter(file =>
+                !file.gcode_filename.trim() ||
+                !file.filament_type.trim() ||
+                file.required_runs <= 0
+            )
+
+            if (invalidFiles.length > 0) {
+                this.$toast.warning(`${invalidFiles.length} file(s) have missing or invalid information (marked in red)`)
+                return
+            }
+
+            // All batch files are valid, proceed
+            this.saveGcode()
+        } else {
+            // Single mode validation - force validate form
+            if (this.$refs.gcodeForm) {
+                (this.$refs.gcodeForm as any).validate()
+            }
+
+            // Wait for validation to complete, then check if valid
+            this.$nextTick(() => {
+                if (this.formValid) {
+                    this.saveGcode()
+                } else {
+                    this.$toast.warning('Please fill in all required fields (marked in red)')
+                }
+            })
         }
     }
 
