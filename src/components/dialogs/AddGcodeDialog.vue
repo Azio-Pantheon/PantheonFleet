@@ -189,35 +189,37 @@
                                 </v-btn>
                             </div>
 
-                            <!-- Editable fields -->
-                            <v-row dense>
-                                <v-col cols="6">
-                                    <v-text-field v-model.number="gcode.required_runs"
-                                                  label="Required Runs"
-                                                  type="number"
-                                                  :rules="[v => v > 0 || 'Must be > 0']"
+                            <!-- Wrap each batch item in its own form for individual validation -->
+                            <v-form :ref="`batchForm${index}`" v-model="gcode.isValid">
+                                <v-row dense>
+                                    <v-col cols="6">
+                                        <v-text-field v-model.number="gcode.required_runs"
+                                                      label="Required Runs *"
+                                                      type="number"
+                                                      :rules="[v => v > 0 || 'Must be > 0']"
+                                                      outlined
+                                                      dense
+                                                      hide-details="auto" />
+                                    </v-col>
+                                    <v-col cols="6">
+                                        <v-select v-model="gcode.preferred_printer"
+                                                  :items="printerOptions"
+                                                  label="Printer"
                                                   outlined
                                                   dense
                                                   hide-details="auto" />
-                                </v-col>
-                                <v-col cols="6">
-                                    <v-select v-model="gcode.preferred_printer"
-                                              :items="printerOptions"
-                                              label="Printer"
-                                              outlined
-                                              dense
-                                              hide-details="auto" />
-                                </v-col>
-                                <v-col cols="12">
-                                    <v-text-field v-model="gcode.filament_type"
-                                                  label="Filament Type"
-                                                  :rules="[v => !!v || 'Filament type is required']"
-                                                  outlined
-                                                  dense
-                                                  required
-                                                  hide-details="auto" />
-                                </v-col>
-                            </v-row>
+                                    </v-col>
+                                    <v-col cols="12">
+                                        <v-text-field v-model="gcode.filament_type"
+                                                      label="Filament Type *"
+                                                      :rules="[v => !!v || 'Filament type is required']"
+                                                      outlined
+                                                      dense
+                                                      required
+                                                      hide-details="auto" />
+                                    </v-col>
+                                </v-row>
+                            </v-form>
 
                             <!-- Auto-parsed info chips -->
                             <div class="mt-2">
@@ -278,6 +280,7 @@ interface FleetJobGcode {
     required_runs: number
     preferred_printer: string
     filament_type: string
+    isValid?: boolean
 }
 
 interface BatchGcodeFile {
@@ -548,6 +551,18 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
         if (this.$refs.gcodeForm) {
             (this.$refs.gcodeForm as any).resetValidation()
         }
+
+        this.$nextTick(() => {
+            // Clear any batch form refs that might exist
+            Object.keys(this.$refs).forEach(key => {
+                if (key.startsWith('batchForm')) {
+                    const formRef = this.$refs[key]
+                    if (formRef && Array.isArray(formRef) && formRef[0]) {
+                        (formRef[0] as any).resetValidation()
+                    }
+                }
+            })
+        })
     }
 
     async onFileSelect(e: Event) {
@@ -643,7 +658,8 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
                     required_runs: parsed.required_runs,
                     preferred_printer: parsed.preferred_printer,
                     filament_type: parsed.filament_type,
-                    originalFile: null
+                    originalFile: null,
+                    isValid: false  // Initialize validation state
                 }
             })
 
@@ -669,11 +685,15 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
         if (this.batchGcodes.length === 0) {
             this.isBatchMode = false
         }
+        this.$forceUpdate()
+
     }
 
     clearBatchGcodes() {
         this.batchGcodes = []
         this.isBatchMode = false
+        this.$forceUpdate()
+
     }
 
     parseGcodeFilename(filename: string) {
@@ -732,15 +752,24 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
                 return
             }
 
-            // Check if all batch files have required fields
-            const invalidFiles = this.batchGcodes.filter(file =>
-                !file.gcode_filename.trim() ||
-                !file.filament_type.trim() ||
-                file.required_runs <= 0
-            )
+            // Validate each batch form individually to trigger red highlighting
+            let allValid = true
+            let invalidCount = 0
 
-            if (invalidFiles.length > 0) {
-                this.$toast.warning(`${invalidFiles.length} file(s) have missing or invalid information (marked in red)`)
+            for (let i = 0; i < this.batchGcodes.length; i++) {
+                const formRef = this.$refs[`batchForm${i}`]
+                if (formRef && Array.isArray(formRef) && formRef[0]) {
+                    // Trigger validation on this specific form
+                    const isValid = (formRef[0] as any).validate()
+                    if (!isValid) {
+                        allValid = false
+                        invalidCount++
+                    }
+                }
+            }
+
+            if (!allValid) {
+                this.$toast.warning(`${invalidCount} file(s) have missing or invalid information (marked in red)`)
                 return
             }
 
