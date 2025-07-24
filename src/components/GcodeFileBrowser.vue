@@ -30,7 +30,7 @@
 
             <!-- Files and folders -->
             <div v-for="item in filteredFiles"
-                 :key="item.filename"
+                 :key="item.filename || item.name || Math.random()"
                  class="file-browser-item d-flex align-center pa-2 file-list-cursor"
                  :class="{
                     'file-selected': isFileSelected(item),
@@ -40,17 +40,20 @@
                  @dblclick="handleDoubleClick(item)">
 
                 <!-- Icon -->
-                <div class="mr-2" style="width: 24px;">
+                <div class="mr-2" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
                     <v-icon v-if="item.isDirectory">{{ mdiFolder }}</v-icon>
-                    <v-icon v-else-if="item.small_thumbnail">
-                        <img :src="item.small_thumbnail" width="24" height="24" :alt="item.filename" />
-                    </v-icon>
+                    <img v-else-if="item.small_thumbnail"
+                         :src="item.small_thumbnail"
+                         width="24"
+                         height="24"
+                         :alt="getItemName(item)"
+                         style="border-radius: 2px;" />
                     <v-icon v-else>{{ mdiFile }}</v-icon>
                 </div>
 
                 <!-- Filename -->
                 <div class="flex-grow-1 text-truncate">
-                    {{ item.filename }}
+                    {{ getItemName(item) }}
                 </div>
 
                 <!-- Selection indicator -->
@@ -77,12 +80,12 @@
             <div class="text-subtitle-2 mb-2">Selected Files ({{ selectedFiles.length }}):</div>
             <div class="selected-files-list" style="max-height: 100px; overflow-y: auto;">
                 <v-chip v-for="file in selectedFiles"
-                        :key="file.filename"
+                        :key="file.filename || file.name || Math.random()"
                         small
                         close
                         class="ma-1"
                         @click:close="removeSelectedFile(file)">
-                    {{ file.filename }}
+                    {{ getItemName(file) }}
                 </v-chip>
             </div>
         </div>
@@ -156,34 +159,50 @@
                 return file.isDirectory || this.isGcodeFile(file)
             })
 
-            if (this.search) {
+            if (this.search && this.search.trim()) {
                 const searchLower = this.search.toLowerCase()
-                files = files.filter((file: any) =>
-                    file.filename.toLowerCase().includes(searchLower)
-                )
+                files = files.filter((file: any) => {
+                    const filename = this.getItemName(file).toLowerCase()
+                    return filename.includes(searchLower)
+                })
             }
 
             return files
         }
 
+        // Helper method to safely get item name
+        getItemName(item: any): string {
+            if (!item) return 'Unknown'
+            return item.filename || item.name || 'Unknown'
+        }
+
         isGcodeFile(file: any) {
             if (file.isDirectory) return false
-            const format = file.filename.slice(file.filename.lastIndexOf('.'))
+            const filename = this.getItemName(file)
+            if (!filename || filename === 'Unknown') return false
+
+            const lastDotIndex = filename.lastIndexOf('.')
+            if (lastDotIndex === -1) return false
+
+            const format = filename.slice(lastDotIndex)
             return validGcodeExtensions.includes(format)
         }
 
         isFileSelected(file: any) {
-            return this.selectedFiles.some(selected => selected.filename === file.filename)
+            const filename = this.getItemName(file)
+            return this.selectedFiles.some(selected => this.getItemName(selected) === filename)
         }
 
         clickRow(item: any) {
             if (item.isDirectory) {
-                this.currentPath += '/' + item.filename
+                const itemName = this.getItemName(item)
+                this.currentPath += '/' + itemName
             } else if (this.isGcodeFile(item)) {
                 if (this.selectionMode === 'single') {
                     this.selectedFiles = [item]
                 } else {
-                    const index = this.selectedFiles.findIndex(f => f.filename === item.filename)
+                    const filename = this.getItemName(item)
+                    const index = this.selectedFiles.findIndex(f => this.getItemName(f) === filename)
                     if (index >= 0) {
                         this.selectedFiles.splice(index, 1)
                     } else {
@@ -195,7 +214,8 @@
 
         handleDoubleClick(item: any) {
             if (item.isDirectory) {
-                this.currentPath += '/' + item.filename
+                const itemName = this.getItemName(item)
+                this.currentPath += '/' + itemName
             } else if (this.isGcodeFile(item)) {
                 if (this.selectionMode === 'single') {
                     this.selectedFiles = [item]
@@ -213,7 +233,8 @@
         }
 
         removeSelectedFile(file: any) {
-            const index = this.selectedFiles.findIndex(f => f.filename === file.filename)
+            const filename = this.getItemName(file)
+            const index = this.selectedFiles.findIndex(f => this.getItemName(f) === filename)
             if (index >= 0) {
                 this.selectedFiles.splice(index, 1)
             }
@@ -226,7 +247,8 @@
         confirmSelection() {
             this.$emit('files-selected', this.selectedFiles.map(file => ({
                 ...file,
-                fullPath: this.currentPath + '/' + file.filename
+                filename: this.getItemName(file), // Ensure filename is always set
+                fullPath: this.currentPath + '/' + this.getItemName(file)
             })))
         }
 
