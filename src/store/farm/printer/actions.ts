@@ -277,7 +277,7 @@ export const fetchFleetDaemonData = async (
     { commit }: ActionContext<FarmPrinterState, any>
 ) => {
     try {
-        const response = await fetch("http://localhost:8090/");
+        const response = await fetch("http://pantheonfleet2.local:8090/");
         const data = await response.json();
         if (data && data.cache) {
             commit("SET_FLEET_DAEMON_PRINTERS", data.cache);

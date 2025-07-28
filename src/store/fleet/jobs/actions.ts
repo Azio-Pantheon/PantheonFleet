@@ -5,7 +5,7 @@ import { FleetJobGcodeRun, FleetJobGcodeRunCreate, FleetJobGcodeRunUpdate } from
 import { RootState } from '@/store/types'
 import axios from 'axios'
 
-const FLEET_API_URL = 'http://localhost:8090'
+const FLEET_API_URL = 'http://pantheonfleet2.local:8090'
 
 // Add these new interfaces for the complete response
 interface FleetJobGcodeWithRuns extends FleetJobGcode {
