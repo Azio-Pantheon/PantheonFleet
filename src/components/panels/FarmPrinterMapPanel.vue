@@ -19,7 +19,7 @@
                               padding: '5px' ,
                               lineHeight: '1' ,
                               fontSize: displayFilamentType.length>
-                            2 ? '6.5px' : '10px',  // Adjust font size based on length
+                            2 ? '8px' : '10px',  // Adjust font size based on length
                             fontWeight: 'bold',  // Make text bold
                             }">
                             {{ displayFilamentType }}
@@ -249,7 +249,7 @@ export default class FarmPrinterPanel extends Mixins(BaseMixin, ThemeMixin, Webc
 
         // For unknown or long custom names: first 2 + "..." + last char
         if (filament && filament.length > 4) {
-            return `${filament.slice(0, 2)}...${filament.slice(-1)}`;
+            return `${filament.slice(0, 1)}..${filament.slice(-1)}`
         }
 
         // Otherwise return as-is (short custom names, null, etc.)
