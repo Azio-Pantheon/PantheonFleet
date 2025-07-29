@@ -48,7 +48,7 @@ export const actions: ActionTree<FarmPrinterState, RootState> = {
 
         socket.onerror = () => {
             //Vue.$toast.error("===obsolete function===" + state.socket.hostname + " failed to connect");
-            window.console.error('Farm Printer WebSocket Error')
+            //window.console.error('Farm Printer WebSocket Error')
         }
 
         socket.onmessage = (msg) => {

@@ -97,8 +97,14 @@
     export default class PageFarm extends Mixins(BaseMixin) {
         isMapView = true;
         isEditing = false;
+
+        // WebSocket management
         fleetSocket: WebSocket | null = null;
         reconnectTimer: any = null;
+        private isDestroyed: boolean = false;
+        private connectionAttempts: number = 0;
+        private maxReconnectAttempts: number = 5;
+        private reconnectDelay: number = 5000;
 
         // Map view properties
         draggingPrinter: any = null;
@@ -180,37 +186,74 @@
         }
 
         mounted() {
+            console.log('Farm: Component mounted');
+            this.isDestroyed = false;
             this.connectWebSocket();
             // Load saved positions from remoteprinters config
             this.loadPrinterPositions();
         }
 
         beforeDestroy() {
+            console.log('Farm: Component being destroyed');
+            this.isDestroyed = true;
             this.cleanup();
         }
 
         cleanup() {
+            console.log('Farm: Cleaning up WebSocket connection');
+
+            // Clear reconnect timer
             if (this.reconnectTimer) {
                 clearTimeout(this.reconnectTimer);
                 this.reconnectTimer = null;
             }
+
+            // Close WebSocket connection
             if (this.fleetSocket) {
-                this.fleetSocket.close();
+                // Remove event listeners to prevent callbacks after cleanup
+                this.fleetSocket.onopen = null;
+                this.fleetSocket.onmessage = null;
+                this.fleetSocket.onclose = null;
+                this.fleetSocket.onerror = null;
+
+                if (this.fleetSocket.readyState === WebSocket.OPEN ||
+                    this.fleetSocket.readyState === WebSocket.CONNECTING) {
+                    this.fleetSocket.close();
+                }
                 this.fleetSocket = null;
             }
         }
 
         connectWebSocket() {
+            // Don't connect if component is destroyed
+            if (this.isDestroyed) {
+                console.log('Farm: Skipping connection - component destroyed');
+                return;
+            }
+
+            // Close existing connection
             if (this.fleetSocket) {
                 this.fleetSocket.close();
+                this.fleetSocket = null;
+            }
+
+            // Check max reconnect attempts
+            if (this.connectionAttempts >= this.maxReconnectAttempts) {
+                console.error('Farm: Max reconnection attempts reached');
+                return;
             }
 
             try {
+                console.log(`Farm: Attempting WebSocket connection (attempt ${this.connectionAttempts + 1})`);
                 this.fleetSocket = new WebSocket('ws://pantheonfleet2.local:8090/ws');
 
                 this.fleetSocket.onopen = () => {
+                    if (this.isDestroyed) return;
+
                     Vue.$toast.success('Connected to Fleet Daemon');
-                    // Clear any reconnect timer
+                    this.connectionAttempts = 0; // Reset on successful connection
+
+                    // Clear any existing reconnect timer
                     if (this.reconnectTimer) {
                         clearTimeout(this.reconnectTimer);
                         this.reconnectTimer = null;
@@ -218,8 +261,39 @@
                 };
 
                 this.fleetSocket.onmessage = (event: MessageEvent) => {
+                    if (this.isDestroyed) return;
+
                     try {
-                        const message = JSON.parse(event.data);
+                        // First, try to parse as JSON
+                        let message;
+                        try {
+                            message = JSON.parse(event.data);
+                        } catch (jsonError) {
+                            // If it's not JSON, handle as plain text (for backward compatibility)
+                            if (event.data === 'ping') {
+                                if (this.fleetSocket && this.fleetSocket.readyState === WebSocket.OPEN) {
+                                    this.fleetSocket.send(JSON.stringify({ type: 'pong' }));
+                                }
+                                return;
+                            }
+                            console.warn('Fleet daemon WS: Non-JSON message received:', event.data);
+                            return;
+                        }
+
+                        // Handle JSON messages
+                        if (message.type === 'ping') {
+                            if (this.fleetSocket && this.fleetSocket.readyState === WebSocket.OPEN) {
+                                this.fleetSocket.send(JSON.stringify({ type: 'pong' }));
+                            }
+                            return;
+                        }
+
+                        if (message.type === 'pong') {
+                            // Pong received, connection is alive
+                            return;
+                        }
+
+                        // Handle regular printer messages
                         if (message.removed && message.hostname) {
                             // Handle printer removal
                             this.$store.commit('farm/REMOVE_FLEET_DAEMON_PRINTER', message.hostname);
@@ -240,7 +314,6 @@
                                 _namespace: message.hostname // Add namespace for compatibility
                             };
                             //Vue.$toast.success('msg=' + JSON.stringify(message));
-
                             this.$store.commit('farm/SET_FLEET_DAEMON_PRINTER', {
                                 hostname: message.hostname,
                                 data: printerData
@@ -248,21 +321,41 @@
                         }
                     } catch (e) {
                         console.warn('Fleet daemon WS error:', e);
+                        console.warn('Raw message data:', event.data);
                     }
                 };
 
-                this.fleetSocket.onclose = () => {
-                    console.warn('Fleet daemon WebSocket closed');
+                this.fleetSocket.onclose = (event) => {
+                    if (this.isDestroyed) return;
+
+                    console.warn('Fleet daemon WebSocket closed', {
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean
+                    });
+
                     this.fleetSocket = null;
+                    this.connectionAttempts++;
                     Vue.$toast.warning('Disconnected from Fleet Daemon');
 
-                    // Attempt to reconnect after 5 seconds
-                    this.reconnectTimer = setTimeout(() => {
-                        this.connectWebSocket();
-                    }, 5000);
+                    // Only attempt reconnection if not at max attempts and component still exists
+                    if (this.connectionAttempts < this.maxReconnectAttempts && !this.isDestroyed) {
+                        const delay = this.reconnectDelay * Math.pow(2, Math.min(this.connectionAttempts - 1, 4)); // Exponential backoff capped at 16x
+                        console.log(`Farm: Scheduling reconnection in ${delay}ms`);
+
+                        this.reconnectTimer = setTimeout(() => {
+                            if (!this.isDestroyed) {
+                                this.connectWebSocket();
+                            }
+                        }, delay);
+                    } else {
+                        console.error('Farm: No more reconnection attempts or component destroyed');
+                    }
                 };
 
                 this.fleetSocket.onerror = (error) => {
+                    if (this.isDestroyed) return;
+
                     console.error('Fleet daemon WebSocket error:', error);
                     Vue.$toast.error('Fleet Daemon connection error');
                 };
@@ -271,10 +364,17 @@
                 console.error('Failed to create WebSocket:', e);
                 Vue.$toast.error('Failed to connect to Fleet Daemon');
 
-                // Retry after 5 seconds
-                this.reconnectTimer = setTimeout(() => {
-                    this.connectWebSocket();
-                }, 5000);
+                // Schedule retry if not destroyed
+                if (!this.isDestroyed && this.connectionAttempts < this.maxReconnectAttempts) {
+                    this.connectionAttempts++;
+                    const delay = this.reconnectDelay * Math.pow(2, Math.min(this.connectionAttempts - 1, 4));
+
+                    this.reconnectTimer = setTimeout(() => {
+                        if (!this.isDestroyed) {
+                            this.connectWebSocket();
+                        }
+                    }, delay);
+                }
             }
         }
 
@@ -310,21 +410,12 @@
         reconnectAllFleetPrinters() {
             Vue.$toast.info('Reconnecting all printers...');
 
-            // Run reconnect logic twice
-            this._reconnectAllFleetPrinters();
-            setTimeout(() => {
-                this._reconnectAllFleetPrinters();
-            }, 50); // Small delay to prevent websocket race
-        }
-
-        _reconnectAllFleetPrinters() {
-            // First reconnect WebSocket
+            // Reset connection attempts and force reconnect
+            this.connectionAttempts = 0;
             this.cleanup();
             this.connectWebSocket();
 
             // Then trigger printer reconnect
-            Vue.$toast.info('Reconnecting all printers...');
-
             fetch('http://pantheonfleet2.local:8090/reconnect_all', { method: 'POST' })
                 .then(res => {
                     if (res.ok) {
@@ -350,10 +441,6 @@
 
             document.addEventListener('mousemove', this.onDrag);
             document.addEventListener('mouseup', this.stopDrag);
-            //this.$toast.success(this.$store.state.gui?.remoteprinters?.printers);
-            //this.$toast.error(printer);
-
-
         }
 
         onDrag(event: MouseEvent) {
@@ -414,7 +501,7 @@
             return null;
         }
 
-         getStyle(printer: any) {
+        getStyle(printer: any) {
             const hostname = printer.socket?.hostname || '';
             const position = this.positions[hostname] || { x: 400, y: 400 };
             const size = "25px";
@@ -434,7 +521,6 @@
                 backgroundColor: 'transparent'
             };
         }
-
 
         spinningBorderStyle(printer: any) {
             const hostname = printer.socket?.hostname || '';
@@ -549,7 +635,6 @@
                 pointerEvents: 'none',
             };
         }
-
 
         // Zoom and pan methods
         get mapStyle() {
@@ -740,5 +825,4 @@
     .pulsing-text {
         animation: pulse 1.5s infinite;
     }
-
 </style>

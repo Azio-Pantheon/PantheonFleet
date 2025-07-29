@@ -61,524 +61,626 @@
 </template>
 
 <script lang="ts">
-import { Component, Mixins } from 'vue-property-decorator'
-import BaseMixin from '@/components/mixins/base'
-import Panel from '@/components/ui/Panel.vue'
-import SimplifiedPrinterMapPanel from '@/components/panels/SimplifiedPrinterMapPanel.vue'
-import Vue from 'vue'
-import {
-    mdiViewDashboard,
-    mdiReload,
-    mdiCheckCircle,
-    mdiPlayCircle,
-    mdiCheckboxMarkedCircle,
-    mdiAlertCircle,
-    mdiConnection
-} from '@mdi/js'
+    import { Component, Mixins } from 'vue-property-decorator'
+    import BaseMixin from '@/components/mixins/base'
+    import Panel from '@/components/ui/Panel.vue'
+    import SimplifiedPrinterMapPanel from '@/components/panels/SimplifiedPrinterMapPanel.vue'
+    import Vue from 'vue'
+    import {
+        mdiViewDashboard,
+        mdiReload,
+        mdiCheckCircle,
+        mdiPlayCircle,
+        mdiCheckboxMarkedCircle,
+        mdiAlertCircle,
+        mdiConnection
+    } from '@mdi/js'
 
-@Component({
-    components: {
-        Panel,
-        SimplifiedPrinterMapPanel,
-    },
-})
-export default class FleetPrinterStatusPanel extends Mixins(BaseMixin) {
-    mdiViewDashboard = mdiViewDashboard
-    mdiReload = mdiReload
-    mdiCheckCircle = mdiCheckCircle
-    mdiPlayCircle = mdiPlayCircle
-    mdiCheckboxMarkedCircle = mdiCheckboxMarkedCircle
-    mdiAlertCircle = mdiAlertCircle
-    mdiConnection = mdiConnection
+    @Component({
+        components: {
+            Panel,
+            SimplifiedPrinterMapPanel,
+        },
+    })
+    export default class FleetPrinterStatusPanel extends Mixins(BaseMixin) {
+        mdiViewDashboard = mdiViewDashboard
+        mdiReload = mdiReload
+        mdiCheckCircle = mdiCheckCircle
+        mdiPlayCircle = mdiPlayCircle
+        mdiCheckboxMarkedCircle = mdiCheckboxMarkedCircle
+        mdiAlertCircle = mdiAlertCircle
+        mdiConnection = mdiConnection
 
-    private fleetSocket: WebSocket | null = null
-    private reconnectTimer: any = null
-    private positions: { [id: string]: { x: number, y: number } } = {}
+        // WebSocket management
+        private fleetSocket: WebSocket | null = null
+        private reconnectTimer: any = null
+        private positions: { [id: string]: { x: number, y: number } } = {}
+        private isDestroyed: boolean = false
+        private connectionAttempts: number = 0
+        private maxReconnectAttempts: number = 5
+        private reconnectDelay: number = 5000
 
-    // Tooltip
-    private hoveredPrinter: any = null
-    private tooltipStyle = {
-        top: '0px',
-        left: '0px',
-        position: 'absolute',
-    }
-
-    get fleetDaemonPrinters() {
-        return this.$store.state.farm.fleetDaemonPrinters || {}
-    }
-
-    get printerStatusCounts() {
-        const counts = {
-            printing: 0,
-            ready: 0,
-            complete: 0,
-            error: 0,
-            disconnected: 0
+        // Tooltip
+        private hoveredPrinter: any = null
+        private tooltipStyle = {
+            top: '0px',
+            left: '0px',
+            position: 'absolute',
         }
 
-        Object.values(this.fleetDaemonPrinters).forEach((printer: any) => {
-            const status = this.getPrinterStatus(printer)
-            counts[status]++
-        })
-
-        return counts
-    }
-
-    mounted() {
-        this.connectWebSocket()
-        this.loadPrinterPositions()
-    }
-
-    beforeDestroy() {
-        this.cleanup()
-    }
-
-    cleanup() {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer)
-            this.reconnectTimer = null
-        }
-        if (this.fleetSocket) {
-            this.fleetSocket.close()
-            this.fleetSocket = null
-        }
-    }
-
-    connectWebSocket() {
-        if (this.fleetSocket) {
-            this.fleetSocket.close()
+        get fleetDaemonPrinters() {
+            return this.$store.state.farm.fleetDaemonPrinters || {}
         }
 
-        try {
-            this.fleetSocket = new WebSocket('ws://pantheonfleet2.local:8090/ws')
-
-            this.fleetSocket.onopen = () => {
-                console.log('Fleet Daemon connected from Jobs page')
-                // Clear any reconnect timer
-                if (this.reconnectTimer) {
-                    clearTimeout(this.reconnectTimer)
-                    this.reconnectTimer = null
-                }
+        get printerStatusCounts() {
+            const counts = {
+                printing: 0,
+                ready: 0,
+                complete: 0,
+                error: 0,
+                disconnected: 0
             }
 
-            this.fleetSocket.onmessage = (event: MessageEvent) => {
-                try {
-                    const message = JSON.parse(event.data)
-                    if (message.removed && message.hostname) {
-                        // Handle printer removal
-                        this.$store.commit('farm/REMOVE_FLEET_DAEMON_PRINTER', message.hostname)
-                    } else if (message.hostname && message.update) {
-                        // Handle printer update
-                        const printerData = {
-                            socket: {
-                                hostname: message.hostname,
-                                isConnected: true,
-                                webPort: 80,
-                                position: this.positions[message.hostname] || { x: 400, y: 400 }
-                            },
-                            ...message.update,
-                            current_file: {
-                                filename: message.update?.print_stats?.filename ?? '',
-                            },
-                            _namespace: message.hostname
+            Object.values(this.fleetDaemonPrinters).forEach((printer: any) => {
+                const status = this.getPrinterStatus(printer)
+                counts[status]++
+            })
+
+            return counts
+        }
+
+        mounted() {
+            console.log('FleetPrinterStatusPanel: Component mounted')
+            this.isDestroyed = false
+            this.connectWebSocket()
+            this.loadPrinterPositions()
+        }
+
+        beforeDestroy() {
+            console.log('FleetPrinterStatusPanel: Component being destroyed')
+            this.isDestroyed = true
+            this.cleanup()
+        }
+
+        cleanup() {
+            console.log('FleetPrinterStatusPanel: Cleaning up WebSocket connection')
+
+            // Clear reconnect timer
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer)
+                this.reconnectTimer = null
+            }
+
+            // Close WebSocket connection
+            if (this.fleetSocket) {
+                // Remove event listeners to prevent callbacks after cleanup
+                this.fleetSocket.onopen = null
+                this.fleetSocket.onmessage = null
+                this.fleetSocket.onclose = null
+                this.fleetSocket.onerror = null
+
+                if (this.fleetSocket.readyState === WebSocket.OPEN ||
+                    this.fleetSocket.readyState === WebSocket.CONNECTING) {
+                    this.fleetSocket.close()
+                }
+                this.fleetSocket = null
+            }
+        }
+
+        connectWebSocket() {
+            // Don't connect if component is destroyed
+            if (this.isDestroyed) {
+                console.log('FleetPrinterStatusPanel: Skipping connection - component destroyed')
+                return
+            }
+
+            // Close existing connection
+            if (this.fleetSocket) {
+                this.fleetSocket.close()
+                this.fleetSocket = null
+            }
+
+            // Check max reconnect attempts
+            if (this.connectionAttempts >= this.maxReconnectAttempts) {
+                console.error('FleetPrinterStatusPanel: Max reconnection attempts reached')
+                return
+            }
+
+            try {
+                console.log(`FleetPrinterStatusPanel: Attempting WebSocket connection (attempt ${this.connectionAttempts + 1})`)
+                this.fleetSocket = new WebSocket('ws://pantheonfleet2.local:8090/ws')
+
+                this.fleetSocket.onopen = () => {
+                    if (this.isDestroyed) return
+
+                    console.log('Fleet Daemon connected from Jobs page')
+                    this.connectionAttempts = 0 // Reset on successful connection
+
+                    // Clear any existing reconnect timer
+                    if (this.reconnectTimer) {
+                        clearTimeout(this.reconnectTimer)
+                        this.reconnectTimer = null
+                    }
+                }
+
+                this.fleetSocket.onmessage = (event: MessageEvent) => {
+                    if (this.isDestroyed) return
+
+                    try {
+                        // First, try to parse as JSON
+                        let message;
+                        try {
+                            message = JSON.parse(event.data);
+                        } catch (jsonError) {
+                            // If it's not JSON, handle as plain text (for backward compatibility)
+                            if (event.data === 'ping') {
+                                if (this.fleetSocket && this.fleetSocket.readyState === WebSocket.OPEN) {
+                                    this.fleetSocket.send(JSON.stringify({ type: 'pong' }));
+                                }
+                                return;
+                            }
+                            console.warn('Fleet daemon WS: Non-JSON message received:', event.data);
+                            return;
                         }
 
-                        this.$store.commit('farm/SET_FLEET_DAEMON_PRINTER', {
-                            hostname: message.hostname,
-                            data: printerData
-                        })
+                        // Handle JSON messages
+                        if (message.type === 'ping') {
+                            if (this.fleetSocket && this.fleetSocket.readyState === WebSocket.OPEN) {
+                                this.fleetSocket.send(JSON.stringify({ type: 'pong' }));
+                            }
+                            return;
+                        }
+
+                        if (message.type === 'pong') {
+                            // Pong received, connection is alive
+                            return;
+                        }
+
+                        // Handle printer messages
+                        if (message.removed && message.hostname) {
+                            // Handle printer removal
+                            this.$store.commit('farm/REMOVE_FLEET_DAEMON_PRINTER', message.hostname)
+                        } else if (message.hostname && message.update) {
+                            // Handle printer update
+                            const printerData = {
+                                socket: {
+                                    hostname: message.hostname,
+                                    isConnected: true,
+                                    webPort: 80,
+                                    position: this.positions[message.hostname] || { x: 400, y: 400 }
+                                },
+                                ...message.update,
+                                current_file: {
+                                    filename: message.update?.print_stats?.filename ?? '',
+                                },
+                                _namespace: message.hostname
+                            }
+
+                            this.$store.commit('farm/SET_FLEET_DAEMON_PRINTER', {
+                                hostname: message.hostname,
+                                data: printerData
+                            })
+                        }
+                    } catch (e) {
+                        console.warn('Fleet daemon WS error:', e)
+                        console.warn('Raw message data:', event.data)
                     }
-                } catch (e) {
-                    console.warn('Fleet daemon WS error:', e)
+                }
+
+                this.fleetSocket.onclose = (event) => {
+                    if (this.isDestroyed) return
+
+                    console.warn('Fleet daemon WebSocket closed', {
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean
+                    })
+
+                    this.fleetSocket = null
+                    this.connectionAttempts++
+
+                    // Only attempt reconnection if not at max attempts and component still exists
+                    if (this.connectionAttempts < this.maxReconnectAttempts && !this.isDestroyed) {
+                        const delay = this.reconnectDelay * Math.pow(2, Math.min(this.connectionAttempts - 1, 4)) // Exponential backoff capped at 16x
+                        console.log(`FleetPrinterStatusPanel: Scheduling reconnection in ${delay}ms`)
+
+                        this.reconnectTimer = setTimeout(() => {
+                            if (!this.isDestroyed) {
+                                this.connectWebSocket()
+                            }
+                        }, delay)
+                    } else {
+                        console.error('FleetPrinterStatusPanel: No more reconnection attempts or component destroyed')
+                    }
+                }
+
+                this.fleetSocket.onerror = (error) => {
+                    if (this.isDestroyed) return
+
+                    console.error('Fleet daemon WebSocket error:', error)
+                }
+
+            } catch (e) {
+                console.error('Failed to create WebSocket:', e)
+
+                // Schedule retry if not destroyed
+                if (!this.isDestroyed && this.connectionAttempts < this.maxReconnectAttempts) {
+                    this.connectionAttempts++
+                    const delay = this.reconnectDelay * Math.pow(2, Math.min(this.connectionAttempts - 1, 4))
+
+                    this.reconnectTimer = setTimeout(() => {
+                        if (!this.isDestroyed) {
+                            this.connectWebSocket()
+                        }
+                    }, delay)
                 }
             }
-
-            this.fleetSocket.onclose = () => {
-                console.warn('Fleet daemon WebSocket closed')
-                this.fleetSocket = null
-
-                // Attempt to reconnect after 5 seconds
-                this.reconnectTimer = setTimeout(() => {
-                    this.connectWebSocket()
-                }, 5000)
-            }
-
-            this.fleetSocket.onerror = (error) => {
-                console.error('Fleet daemon WebSocket error:', error)
-            }
-
-        } catch (e) {
-            console.error('Failed to create WebSocket:', e)
-
-            // Retry after 5 seconds
-            this.reconnectTimer = setTimeout(() => {
-                this.connectWebSocket()
-            }, 5000)
         }
-    }
 
-    loadPrinterPositions() {
-        // Load positions from remoteprinters config if available
-        const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
-        Object.entries(remotePrinters).forEach(([id, printer]: [string, any]) => {
-            if (printer.hostname && printer.position) {
-                this.positions[printer.hostname] = printer.position
+        loadPrinterPositions() {
+            // Load positions from remoteprinters config if available
+            const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
+            Object.entries(remotePrinters).forEach(([id, printer]: [string, any]) => {
+                if (printer.hostname && printer.position) {
+                    this.positions[printer.hostname] = printer.position
+                }
+            })
+        }
+
+        getPrinterStatus(printer: any): 'disconnected' | 'error' | 'printing' | 'complete' | 'ready' {
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+
+            // 1. Fleet to printer WS is disconnected
+            if (fleetDisconnected) {
+                return 'disconnected'
             }
-        })
-    }
 
-    getPrinterStatus(printer: any): 'disconnected' | 'error' | 'printing' | 'complete' | 'ready' {
-        const fleetDisconnected = printer.fleet_to_printer_ws === false
+            // 2. WebSocket or printer connection is down
+            if (!this.fleetSocket || this.fleetSocket.readyState !== WebSocket.OPEN || !printer.socket?.isConnected) {
+                return 'disconnected'
+            }
 
-        // 1. Fleet to printer WS is disconnected
-        if (fleetDisconnected) {
+            // 3. Webhook shutdown
+            if (printer.webhooks?.state === 'shutdown') {
+                return 'error'
+            }
+
+            // 4. Check print_stats state
+            const state = printer.print_stats?.state
+            if (state === 'printing') {
+                return 'printing'
+            } else if (state === 'error' || state === 'paused' || state === 'cancelled') {
+                return 'error'
+            } else if (state === 'complete') {
+                return 'complete'
+            } else if (state === 'standby') {
+                return 'ready'
+            }
+
+            // Default to disconnected if state is unknown
             return 'disconnected'
         }
 
-        // 2. WebSocket or printer connection is down
-        if (!this.fleetSocket || this.fleetSocket.readyState !== WebSocket.OPEN || !printer.socket?.isConnected) {
-            return 'disconnected'
-        }
-
-        // 3. Webhook shutdown
-        if (printer.webhooks?.state === 'shutdown') {
-            return 'error'
-        }
-
-        // 4. Check print_stats state
-        const state = printer.print_stats?.state
-        if (state === 'printing') {
-            return 'printing'
-        } else if (state === 'error' || state === 'paused' || state === 'cancelled') {
-            return 'error'
-        } else if (state === 'complete') {
-            return 'complete'
-        } else if (state === 'standby') {
-            return 'ready'
-        }
-
-        // Default to disconnected if state is unknown
-        return 'disconnected'
-    }
-
-    getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
-        const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
-        for (const printer of Object.values(remotePrinters)) {
-            if ((printer as any).hostname === hostname) {
-                return (printer as any).printerModel ?? null
+        getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
+            const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
+            for (const printer of Object.values(remotePrinters)) {
+                if ((printer as any).hostname === hostname) {
+                    return (printer as any).printerModel ?? null
+                }
             }
+            return null
         }
-        return null
-    }
 
-    getStyle(printer: any) {
-        const hostname = printer.socket?.hostname || ''
-        const position = this.positions[hostname] || { x: 400, y: 400 }
-        const size = "20px" // Slightly smaller for the jobs page
+        getStyle(printer: any) {
+            const hostname = printer.socket?.hostname || ''
+            const position = this.positions[hostname] || { x: 400, y: 400 }
+            const size = "20px" // Slightly smaller for the jobs page
 
-        // Determine style based on model
-        const model = this.getPrinterModel(hostname)
-        const clip = model === 'HS-Pro' ? 'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)' : 'circle(50%)'
+            // Determine style based on model
+            const model = this.getPrinterModel(hostname)
+            const clip = model === 'HS-Pro' ? 'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)' : 'circle(50%)'
 
-        return {
-            position: 'absolute',
-            left: (position.x) + 'px',
-            top: (position.y) + 'px',
-            width: size,
-            height: size,
-            borderRadius: model === 'HS-Pro' ? '0%' : '50%',
-            clipPath: clip,
-            backgroundColor: 'transparent',
-            cursor: 'pointer'
-        }
-    }
-
-    spinningBorderStyle(printer: any) {
-        const hostname = printer.socket?.hostname || ''
-        const model = this.getPrinterModel(hostname)
-        const isSquare = model === 'HS-Pro'
-
-        const fleetDisconnected = printer.fleet_to_printer_ws === false
-
-        // 1. FLEET TO PRINTER WS is disconnected = GRAY
-        if (fleetDisconnected) {
             return {
                 position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                borderRadius: isSquare ? '0%' : '50%',
-                border: '0.2em solid gray',
-                zIndex: 2,
-                pointerEvents: 'none',
+                left: (position.x) + 'px',
+                top: (position.y) + 'px',
+                width: size,
+                height: size,
+                borderRadius: model === 'HS-Pro' ? '0%' : '50%',
+                clipPath: clip,
+                backgroundColor: 'transparent',
+                cursor: 'pointer'
             }
         }
 
-        // 2. WebSocket or printer connection is down = GRAY
-        if (!this.fleetSocket || this.fleetSocket.readyState !== WebSocket.OPEN || !printer.socket?.isConnected) {
-            return {
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                borderRadius: isSquare ? '0%' : '50%',
-                border: '0.2em solid gray',
-                zIndex: 2,
-                pointerEvents: 'none',
-            }
-        }
+        spinningBorderStyle(printer: any) {
+            const hostname = printer.socket?.hostname || ''
+            const model = this.getPrinterModel(hostname)
+            const isSquare = model === 'HS-Pro'
 
-        // 3. Webhook shutdown = RED
-        if (printer.webhooks?.state === 'shutdown') {
-            return {
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                borderRadius: isSquare ? '0%' : '50%',
-                border: '0.2em solid red',
-                zIndex: 2,
-                pointerEvents: 'none',
-            }
-        }
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
 
-        // 4. Printing = spinning animation
-        const state = printer.print_stats?.state
-        if (state === 'printing') {
-            if (isSquare) {
+            // 1. FLEET TO PRINTER WS is disconnected = GRAY
+            if (fleetDisconnected) {
                 return {
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: '100%',
                     height: '100%',
-                    borderRadius: '0%',
-                    background: `conic-gradient(transparent 0%, blue 10%, transparent 90%)`,
-                    mask: `
+                    borderRadius: isSquare ? '0%' : '50%',
+                    border: '0.2em solid gray',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                }
+            }
+
+            // 2. WebSocket or printer connection is down = GRAY
+            if (!this.fleetSocket || this.fleetSocket.readyState !== WebSocket.OPEN || !printer.socket?.isConnected) {
+                return {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: isSquare ? '0%' : '50%',
+                    border: '0.2em solid gray',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                }
+            }
+
+            // 3. Webhook shutdown = RED
+            if (printer.webhooks?.state === 'shutdown') {
+                return {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: isSquare ? '0%' : '50%',
+                    border: '0.2em solid red',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                }
+            }
+
+            // 4. Printing = spinning animation
+            const state = printer.print_stats?.state
+            if (state === 'printing') {
+                if (isSquare) {
+                    return {
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '0%',
+                        background: `conic-gradient(transparent 0%, blue 10%, transparent 90%)`,
+                        mask: `
                         linear-gradient(#fff 0 0) content-box,
                         linear-gradient(#fff 0 0)
                     `,
-                    maskComposite: 'subtract',
-                    padding: '0.2em',
-                    animation: 'spin 2s linear infinite',
-                    zIndex: 2,
-                    pointerEvents: 'none',
-                }
-            } else {
-                return {
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: '50%',
-                    background: `conic-gradient(transparent 0%, blue 10%, transparent 90%)`,
-                    mask: "radial-gradient(farthest-side, transparent calc(100% - 0.25em), black calc(100% - 0.25em))",
-                    animation: 'spin 2s linear infinite',
-                    zIndex: 2,
-                    pointerEvents: 'none',
-                }
-            }
-        }
-
-        // 5. Other states
-        let color = 'gray'
-        if (state === 'error' || state === 'paused' || state === 'cancelled') {
-            color = 'red'
-        } else if (state === 'complete') {
-            color = 'blue'
-        } else if (state === 'standby') {
-            color = 'hsl(90, 100%, 32%)'
-        }
-
-        return {
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            borderRadius: isSquare ? '0%' : '50%',
-            border: `0.2em solid ${color}`,
-            zIndex: 2,
-            pointerEvents: 'none',
-        }
-    }
-
-    showTooltip(printer: any, event: MouseEvent) {
-        this.hoveredPrinter = printer
-
-        this.$nextTick(() => {
-            const tooltipElement = this.$refs.tooltip as HTMLElement
-            if (!tooltipElement) return
-
-            const hostname = printer.socket?.hostname || ''
-            const printerPosition = this.positions[hostname] || { x: 400, y: 400 }
-            const screenWidth = window.innerWidth
-            const tooltipWidth = tooltipElement.offsetWidth
-
-            // Position tooltip to the right of printer, scaled down
-            let tooltipLeft = (printerPosition.x) + 30
-
-            // Check if tooltip would go off right edge of screen
-            if (event.clientX + tooltipWidth > (screenWidth - 300)) {
-                // Move tooltip to the left of printer
-                tooltipLeft = (printerPosition.x) - tooltipWidth + 10
-
-                // Check if moving to left would go off left edge of screen
-                if (tooltipLeft < 10) {
-                    tooltipLeft = (printerPosition.x) + 30
-                    if (tooltipLeft + tooltipWidth > screenWidth - 10) {
-                        tooltipLeft = screenWidth - tooltipWidth - 10
+                        maskComposite: 'subtract',
+                        padding: '0.2em',
+                        animation: 'spin 2s linear infinite',
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                    }
+                } else {
+                    return {
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '50%',
+                        background: `conic-gradient(transparent 0%, blue 10%, transparent 90%)`,
+                        mask: "radial-gradient(farthest-side, transparent calc(100% - 0.25em), black calc(100% - 0.25em))",
+                        animation: 'spin 2s linear infinite',
+                        zIndex: 2,
+                        pointerEvents: 'none',
                     }
                 }
             }
 
-            this.tooltipStyle.top = `${(printerPosition.y) + 15}px`
-            this.tooltipStyle.left = `${tooltipLeft}px`
-        })
-    }
+            // 5. Other states
+            let color = 'gray'
+            if (state === 'error' || state === 'paused' || state === 'cancelled') {
+                color = 'red'
+            } else if (state === 'complete') {
+                color = 'blue'
+            } else if (state === 'standby') {
+                color = 'hsl(90, 100%, 32%)'
+            }
 
-    hideTooltip() {
-        this.hoveredPrinter = null
-    }
-
-    clickPrinter(printer: any) {
-
-        //this.$toast.success(JSON.stringify(printer, null, 2));
-        //this.$toast.success(this.$store.state.gui?.remoteprinters?.printers);
-        console.log(this.$store.state)
-        /*
-        if (printer.socket.isConnected) {
-            const thisUrl = window.location.href.split('/')
-            const protocol = thisUrl[0]
-
-            let url = protocol + '//' + printer.socket.hostname
-            if (80 !== printer.socket.webPort) url += ':' + printer.socket.webPort
-
-            window.open(url)
+            return {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                borderRadius: isSquare ? '0%' : '50%',
+                border: `0.2em solid ${color}`,
+                zIndex: 2,
+                pointerEvents: 'none',
+            }
         }
-        */
-    }
 
-    reconnectAllFleetPrinters() {
-        this.$toast.info('Reconnecting all printers...')
+        showTooltip(printer: any, event: MouseEvent) {
+            this.hoveredPrinter = printer
 
-        // First reconnect WebSocket
-        this.cleanup()
-        this.connectWebSocket()
+            this.$nextTick(() => {
+                const tooltipElement = this.$refs.tooltip as HTMLElement
+                if (!tooltipElement) return
 
-        // Then trigger printer reconnect
-        fetch('http://pantheonfleet2.local:8090/reconnect_all', { method: 'POST' })
-            .then(res => {
-                if (res.ok) {
-                    this.$toast.success('Reconnecting all printers...')
-                } else {
-                    throw new Error('Failed to reconnect')
+                const hostname = printer.socket?.hostname || ''
+                const printerPosition = this.positions[hostname] || { x: 400, y: 400 }
+                const screenWidth = window.innerWidth
+                const tooltipWidth = tooltipElement.offsetWidth
+
+                // Position tooltip to the right of printer, scaled down
+                let tooltipLeft = (printerPosition.x) + 30
+
+                // Check if tooltip would go off right edge of screen
+                if (event.clientX + tooltipWidth > (screenWidth - 300)) {
+                    // Move tooltip to the left of printer
+                    tooltipLeft = (printerPosition.x) - tooltipWidth + 10
+
+                    // Check if moving to left would go off left edge of screen
+                    if (tooltipLeft < 10) {
+                        tooltipLeft = (printerPosition.x) + 30
+                        if (tooltipLeft + tooltipWidth > screenWidth - 10) {
+                            tooltipLeft = screenWidth - tooltipWidth - 10
+                        }
+                    }
                 }
-            })
-            .catch(err => {
-                console.error(err)
-                this.$toast.error('Failed to trigger reconnect')
-            })
-    }
 
-    getPrinterPrintPercent(printer: any) {
-        const progress = printer.virtual_sdcard?.progress || 0
-        return Math.floor(progress * 100)
+                this.tooltipStyle.top = `${(printerPosition.y) + 15}px`
+                this.tooltipStyle.left = `${tooltipLeft}px`
+            })
+        }
+
+        hideTooltip() {
+            this.hoveredPrinter = null
+        }
+
+        clickPrinter(printer: any) {
+            //this.$toast.success(JSON.stringify(printer, null, 2));
+            //this.$toast.success(this.$store.state.gui?.remoteprinters?.printers);
+            console.log(this.$store.state)
+            /*
+            if (printer.socket.isConnected) {
+                const thisUrl = window.location.href.split('/')
+                const protocol = thisUrl[0]
+
+                let url = protocol + '//' + printer.socket.hostname
+                if (80 !== printer.socket.webPort) url += ':' + printer.socket.webPort
+
+                window.open(url)
+            }
+            */
+        }
+
+        reconnectAllFleetPrinters() {
+            this.$toast.info('Reconnecting all printers...')
+
+            // Reset connection attempts and force reconnect
+            this.connectionAttempts = 0
+            this.cleanup()
+            this.connectWebSocket()
+
+            // Then trigger printer reconnect
+            fetch('http://pantheonfleet2.local:8090/reconnect_all', { method: 'POST' })
+                .then(res => {
+                    if (res.ok) {
+                        this.$toast.success('Reconnecting all printers...')
+                    } else {
+                        throw new Error('Failed to reconnect')
+                    }
+                })
+                .catch(err => {
+                    console.error(err)
+                    this.$toast.error('Failed to trigger reconnect')
+                })
+        }
+
+        getPrinterPrintPercent(printer: any) {
+            const progress = printer.virtual_sdcard?.progress || 0
+            return Math.floor(progress * 100)
+        }
     }
-}
 </script>
 
 <style scoped>
-.simplified-map-container {
-    position: relative;
-    width: 100%;
-    height: 600px;
-}
-
-.background-container {
-    background-image: url('@/components/ui/NewBuilding v2.png');
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
-    background-position: left;
-    width: 1000px;
-    height: 500px;
-    position: absolute;
-}
-
-/* Status counter styles */
-.printer-stats {
-    font-size: 14px;
-}
-
-.status-counters {
-    display: flex;
-    gap: 15px;
-    flex-wrap: wrap;
-}
-
-.status-counter {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background-color: rgba(0, 0, 0, 0.05);
-}
-
-.status-counter.printing {
-    color: #1976d2;
-}
-
-.status-counter.ready {
-    color: hsl(90, 100%, 32%);
-}
-
-.status-counter.complete {
-    color: #1976d2;
-}
-
-.status-counter.error {
-    color: #d32f2f;
-}
-
-.status-counter.disconnected {
-    color: #757575;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
+    .simplified-map-container {
+        position: relative;
+        width: 100%;
+        height: 600px;
     }
-    50% {
-        opacity: 0.4;
-    }
-}
 
-.pulsing-text {
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0);
+    .background-container {
+        background-image: url('@/components/ui/NewBuilding v2.png');
+        background-size: 100% 100%;
+        background-repeat: no-repeat;
+        background-position: left;
+        width: 1000px;
+        height: 500px;
+        position: absolute;
     }
-    to {
-        transform: rotate(360deg);
-    }
-}
 
-.tooltip {
-    position: absolute;
-    background-color: rgba(0, 0, 0, 0.75);
-    color: white;
-    padding: 8px 12px;
-    border-radius: 4px;
-    white-space: nowrap;
-    z-index: 10;
-    font-size: 12px;
-}
+    /* Status counter styles */
+    .printer-stats {
+        font-size: 14px;
+    }
+
+    .status-counters {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+
+    .status-counter {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+
+        .status-counter.printing {
+            color: #1976d2;
+        }
+
+        .status-counter.ready {
+            color: hsl(90, 100%, 32%);
+        }
+
+        .status-counter.complete {
+            color: #1976d2;
+        }
+
+        .status-counter.error {
+            color: #d32f2f;
+        }
+
+        .status-counter.disconnected {
+            color: #757575;
+        }
+
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.4;
+        }
+    }
+
+    .pulsing-text {
+        animation: pulse 1.5s infinite;
+    }
+
+    @keyframes spin {
+        from {
+            transform: rotate(0);
+        }
+
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .tooltip {
+        position: absolute;
+        background-color: rgba(0, 0, 0, 0.75);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        white-space: nowrap;
+        z-index: 10;
+        font-size: 12px;
+    }
 </style>

@@ -93,233 +93,140 @@
 </template>
 
 <script lang="ts">
-import { Component, Mixins } from 'vue-property-decorator'
-import BaseMixin from '@/components/mixins/base'
-import JobListPanel from '@/components/panels/JobListPanel.vue'
-import JobStatisticsPanel from '@/components/panels/JobStatisticsPanel.vue'
-import CustomerPanel from '@/components/panels/CustomerPanel.vue'
-import FleetPrinterStatusPanel from '@/components/panels/FleetPrinterStatusPanel.vue'
-import {
-    mdiChevronUp,
-    mdiChevronDown,
-    mdiUnfoldMoreHorizontal,
-    mdiUnfoldLessHorizontal
-} from '@mdi/js'
+    import { Component, Mixins } from 'vue-property-decorator'
+    import BaseMixin from '@/components/mixins/base'
+    import JobListPanel from '@/components/panels/JobListPanel.vue'
+    import JobStatisticsPanel from '@/components/panels/JobStatisticsPanel.vue'
+    import CustomerPanel from '@/components/panels/CustomerPanel.vue'
+    import FleetPrinterStatusPanel from '@/components/panels/FleetPrinterStatusPanel.vue'
+    import {
+        mdiChevronUp,
+        mdiChevronDown,
+        mdiUnfoldMoreHorizontal,
+        mdiUnfoldLessHorizontal
+    } from '@mdi/js'
 
-interface PanelStates {
-    fleetStatus: boolean
-    jobStats: boolean
-    jobList: boolean
-    customers: boolean
-}
-
-@Component({
-    components: {
-        JobStatisticsPanel,
-        JobListPanel,
-        CustomerPanel,
-        FleetPrinterStatusPanel,
-    },
-})
-export default class PageJob extends Mixins(BaseMixin) {
-    mdiChevronUp = mdiChevronUp
-    mdiChevronDown = mdiChevronDown
-    mdiUnfoldMoreHorizontal = mdiUnfoldMoreHorizontal
-    mdiUnfoldLessHorizontal = mdiUnfoldLessHorizontal
-    // Fleet WebSocket management
-    private fleetSocket: WebSocket | null = null
-    private reconnectTimer: any = null
-    private positions: { [id: string]: { x: number, y: number } } = {}
-
-    // Panel collapse/expand states
-    private panelStates: PanelStates = {
-        fleetStatus: true,   // Expanded by default
-        jobStats: true,      // Expanded by default
-        jobList: true,       // Expanded by default (most important)
-        customers: false,    // Collapsed by default (less frequently used)
+    interface PanelStates {
+        fleetStatus: boolean
+        jobStats: boolean
+        jobList: boolean
+        customers: boolean
     }
 
-    get allPanelsExpanded(): boolean {
-        return Object.values(this.panelStates).every(state => state === true)
-    }
+    @Component({
+        components: {
+            JobStatisticsPanel,
+            JobListPanel,
+            CustomerPanel,
+            FleetPrinterStatusPanel,
+        },
+    })
+    export default class PageJob extends Mixins(BaseMixin) {
+        mdiChevronUp = mdiChevronUp
+        mdiChevronDown = mdiChevronDown
+        mdiUnfoldMoreHorizontal = mdiUnfoldMoreHorizontal
+        mdiUnfoldLessHorizontal = mdiUnfoldLessHorizontal
 
-    get allPanelsCollapsed(): boolean {
-        return Object.values(this.panelStates).every(state => state === false)
-    }
-
-    async mounted() {
-        // Load saved panel states from localStorage
-        this.loadPanelStates()
-        
-        // Initialize fleet WebSocket connection
-        this.connectFleetWebSocket()
-        this.loadPrinterPositions()
-        
-        // Initialize job data when page loads
-        await this.loadJobs()
-        await this.loadCustomers()
-    }
-
-    beforeDestroy() {
-        this.cleanupFleetConnection()
-    }
-
-    // Fleet WebSocket methods
-    connectFleetWebSocket() {
-        if (this.fleetSocket) {
-            this.fleetSocket.close()
+        // Panel collapse/expand states
+        private panelStates: PanelStates = {
+            fleetStatus: true,   // Expanded by default
+            jobStats: true,      // Expanded by default
+            jobList: true,       // Expanded by default (most important)
+            customers: false,    // Collapsed by default (less frequently used)
         }
 
-        try {
-            this.fleetSocket = new WebSocket('ws://pantheonfleet2.local:8090/ws')
+        get allPanelsExpanded(): boolean {
+            return Object.values(this.panelStates).every(state => state === true)
+        }
 
-            this.fleetSocket.onopen = () => {
-                console.log('Fleet Daemon connected from Jobs page')
-                if (this.reconnectTimer) {
-                    clearTimeout(this.reconnectTimer)
-                    this.reconnectTimer = null
+        get allPanelsCollapsed(): boolean {
+            return Object.values(this.panelStates).every(state => state === false)
+        }
+
+        // Access fleet printer data from Vuex store (populated by FleetPrinterStatusPanel)
+        get fleetDaemonPrinters() {
+            return this.$store.state.farm.fleetDaemonPrinters || {}
+        }
+
+        async mounted() {
+            // Load saved panel states from localStorage
+            this.loadPanelStates()
+
+            // Initialize job data when page loads
+            await this.loadJobs()
+            await this.loadCustomers()
+        }
+
+        // No beforeDestroy needed since we're not managing WebSocket connections here
+
+        async loadJobs() {
+            try {
+                await this.$store.dispatch('fleet/jobs/loadJobs')
+            } catch (error) {
+                console.error('Failed to load jobs:', error)
+            }
+        }
+
+        async loadCustomers() {
+            try {
+                await this.$store.dispatch('fleet/jobs/loadCustomers')
+            } catch (error) {
+                console.error('Failed to load customers:', error)
+            }
+        }
+
+        togglePanel(panelName: keyof PanelStates) {
+            this.panelStates[panelName] = !this.panelStates[panelName]
+            this.savePanelStates()
+        }
+
+        toggleAllPanels() {
+            const targetState = this.allPanelsExpanded ? false : true
+
+            // Set all panels to the target state
+            Object.keys(this.panelStates).forEach(key => {
+                this.panelStates[key as keyof PanelStates] = targetState
+            })
+
+            this.savePanelStates()
+        }
+
+        expandAllPanels() {
+            Object.keys(this.panelStates).forEach(key => {
+                this.panelStates[key as keyof PanelStates] = true
+            })
+            this.savePanelStates()
+        }
+
+        collapseAllPanels() {
+            Object.keys(this.panelStates).forEach(key => {
+                this.panelStates[key as keyof PanelStates] = false
+            })
+            this.savePanelStates()
+        }
+
+        savePanelStates() {
+            try {
+                localStorage.setItem('jobPagePanelStates', JSON.stringify(this.panelStates))
+            } catch (error) {
+                console.warn('Failed to save panel states to localStorage:', error)
+            }
+        }
+
+        loadPanelStates() {
+            try {
+                const saved = localStorage.getItem('jobPagePanelStates')
+                if (saved) {
+                    const parsedStates = JSON.parse(saved)
+                    // Merge saved states with defaults to handle new panels
+                    this.panelStates = { ...this.panelStates, ...parsedStates }
                 }
+            } catch (error) {
+                console.warn('Failed to load panel states from localStorage:', error)
+                // Keep default states if loading fails
             }
-
-            this.fleetSocket.onmessage = (event: MessageEvent) => {
-                try {
-                    const message = JSON.parse(event.data)
-                    if (message.removed && message.hostname) {
-                        this.$store.commit('farm/REMOVE_FLEET_DAEMON_PRINTER', message.hostname)
-                    } else if (message.hostname && message.update) {
-                        const printerData = {
-                            socket: {
-                                hostname: message.hostname,
-                                isConnected: true,
-                                webPort: 80,
-                                position: this.positions[message.hostname] || { x: 400, y: 400 }
-                            },
-                            ...message.update,
-                            current_file: {
-                                filename: message.update?.print_stats?.filename ?? '',
-                            },
-                            _namespace: message.hostname
-                        }
-
-                        this.$store.commit('farm/SET_FLEET_DAEMON_PRINTER', {
-                            hostname: message.hostname,
-                            data: printerData
-                        })
-                    }
-                } catch (e) {
-                    console.warn('Fleet daemon WS error:', e)
-                }
-            }
-
-            this.fleetSocket.onclose = () => {
-                console.warn('Fleet daemon WebSocket closed')
-                this.fleetSocket = null
-
-                this.reconnectTimer = setTimeout(() => {
-                    this.connectFleetWebSocket()
-                }, 5000)
-            }
-
-            this.fleetSocket.onerror = (error) => {
-                console.error('Fleet daemon WebSocket error:', error)
-            }
-
-        } catch (e) {
-            console.error('Failed to create WebSocket:', e)
-            this.reconnectTimer = setTimeout(() => {
-                this.connectFleetWebSocket()
-            }, 5000)
         }
     }
-
-    loadPrinterPositions() {
-        const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
-        Object.entries(remotePrinters).forEach(([id, printer]: [string, any]) => {
-            if (printer.hostname && printer.position) {
-                this.positions[printer.hostname] = printer.position
-            }
-        })
-    }
-
-    cleanupFleetConnection() {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer)
-            this.reconnectTimer = null
-        }
-        if (this.fleetSocket) {
-            this.fleetSocket.close()
-            this.fleetSocket = null
-        }
-    }
-
-    async loadJobs() {
-        try {
-            await this.$store.dispatch('fleet/jobs/loadJobs')
-        } catch (error) {
-            console.error('Failed to load jobs:', error)
-        }
-    }
-
-    async loadCustomers() {
-        try {
-            await this.$store.dispatch('fleet/jobs/loadCustomers')
-        } catch (error) {
-            console.error('Failed to load customers:', error)
-        }
-    }
-
-    togglePanel(panelName: keyof PanelStates) {
-        this.panelStates[panelName] = !this.panelStates[panelName]
-        this.savePanelStates()
-    }
-
-    toggleAllPanels() {
-        const targetState = this.allPanelsExpanded ? false : true
-
-        // Set all panels to the target state
-        Object.keys(this.panelStates).forEach(key => {
-            this.panelStates[key as keyof PanelStates] = targetState
-        })
-
-        this.savePanelStates()
-    }
-
-    expandAllPanels() {
-        Object.keys(this.panelStates).forEach(key => {
-            this.panelStates[key as keyof PanelStates] = true
-        })
-        this.savePanelStates()
-    }
-
-    collapseAllPanels() {
-        Object.keys(this.panelStates).forEach(key => {
-            this.panelStates[key as keyof PanelStates] = false
-        })
-        this.savePanelStates()
-    }
-
-    savePanelStates() {
-        try {
-            localStorage.setItem('jobPagePanelStates', JSON.stringify(this.panelStates))
-        } catch (error) {
-            console.warn('Failed to save panel states to localStorage:', error)
-        }
-    }
-
-    loadPanelStates() {
-        try {
-            const saved = localStorage.getItem('jobPagePanelStates')
-            if (saved) {
-                const parsedStates = JSON.parse(saved)
-                // Merge saved states with defaults to handle new panels
-                this.panelStates = { ...this.panelStates, ...parsedStates }
-            }
-        } catch (error) {
-            console.warn('Failed to load panel states from localStorage:', error)
-            // Keep default states if loading fails
-        }
-    }
-}
 </script>
 
 <style scoped>
