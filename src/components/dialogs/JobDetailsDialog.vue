@@ -256,8 +256,33 @@
                                 <div v-for="gcode in gcodeFiles" :key="gcode.id" class="gcode-file-item mb-4 pa-3" style="border: 1px solid #e0e0e0; border-radius: 8px; background-color: #2a2a2a; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                                     <!-- File header -->
                                     <div class="d-flex justify-space-between align-center mb-2">
-                                        <div class="font-weight-bold text--primary" style="color: #1976d2 !important; font-size: 14px;">
-                                            {{ gcode.gcode_filename }}
+                                        <div class="d-flex align-center">
+                                            <!-- QC Status Icon -->
+                                            <v-tooltip top>
+                                                <template #activator="{ on, attrs }">
+                                                    <v-icon :color="getGcodeFileStatusColor(gcode)"
+                                                            small
+                                                            class="mr-2 qc-status-icon"
+                                                            v-bind="attrs"
+                                                            v-on="on">
+                                                        {{ getGcodeFileStatusIcon(gcode) }}
+                                                    </v-icon>
+                                                </template>
+                                                <span>{{ getGcodeFileStatusTooltip(gcode) }}</span>
+                                            </v-tooltip>
+
+                                            <!-- File name with conditional coloring -->
+                                            <v-tooltip top>
+                                                <template #activator="{ on, attrs }">
+                                                    <div :class="[getGcodeFileNameColor(gcode), 'font-weight-bold', 'gcode-filename']"
+                                                         :style="`font-size: 14px; transition: color 0.3s ease;`"
+                                                         v-bind="attrs"
+                                                         v-on="on">
+                                                        {{ gcode.gcode_filename }}
+                                                    </div>
+                                                </template>
+                                                <span>{{ getGcodeFileStatusTooltip(gcode) }}</span>
+                                            </v-tooltip>
                                         </div>
                                         <div class="d-flex align-center">
                                             <v-btn icon
@@ -400,6 +425,8 @@ import {
     mdiDelete,
     mdiPlus,
     mdiInformationOutline,
+    mdiCheckCircle,
+    mdiProgressClock,
 } from '@mdi/js'
 
 interface FleetJob {
@@ -459,6 +486,8 @@ export default class JobDetailsDialog extends Mixins(BaseMixin) {
     mdiDelete = mdiDelete
     mdiPlus = mdiPlus
     mdiInformationOutline = mdiInformationOutline
+    mdiCheckCircle = mdiCheckCircle
+    mdiProgressClock = mdiProgressClock
 
     @Prop({ type: Boolean, default: false })
     readonly value!: boolean
@@ -669,6 +698,38 @@ export default class JobDetailsDialog extends Mixins(BaseMixin) {
 
         this.runStatisticsCache[fullCacheKey] = stats
         return stats
+    }
+
+    hasEnoughQCPassedRuns(gcode: FleetJobGcode): boolean {
+        const stats = this.getRunStatistics(gcode)
+        return stats.passedQC >= stats.requiredRuns
+    }
+
+    getGcodeFileNameColor(gcode: FleetJobGcode): string {
+        return this.hasEnoughQCPassedRuns(gcode) ? 'green--text' : 'blue--text'
+    }
+
+    getGcodeFileStatusColor(gcode: FleetJobGcode): string {
+        return this.hasEnoughQCPassedRuns(gcode) ? 'green' : 'blue'
+    }
+
+    getGcodeFileStatusTextColor(gcode: FleetJobGcode): string {
+        return 'white'
+    }
+
+    getGcodeFileStatusIcon(gcode: FleetJobGcode): string {
+        return this.hasEnoughQCPassedRuns(gcode) ? this.mdiCheckCircle : this.mdiProgressClock
+    }
+
+    getGcodeFileStatusTooltip(gcode: FleetJobGcode): string {
+        const stats = this.getRunStatistics(gcode)
+
+        if (this.hasEnoughQCPassedRuns(gcode)) {
+            return `✅ QC Complete: ${stats.passedQC}/${stats.requiredRuns} runs passed`
+        } else {
+            const remaining = stats.requiredRuns - stats.passedQC
+            return `🔄 QC Pending: ${stats.passedQC}/${stats.requiredRuns} passed, ${remaining} more needed`
+        }
     }
 
     @Watch('allJobRuns', { deep: true })
