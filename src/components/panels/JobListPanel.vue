@@ -1766,59 +1766,85 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     }
 
     async updateRunStatus(run: FleetJobGcodeRun, status: string) {
+        // Store original value for potential revert
+        const originalStatus = run.status
+
         try {
+            // OPTIMISTIC UPDATE: Update UI immediately before API call
+            this.updateLocalRunData(run.id, { status })
+
+            // Send API request
             await this.$store.dispatch('fleet/jobs/updateJobGcodeRun', {
                 runId: run.id,
                 updateData: { status }
             })
+
+            // Success - show success toast
             this.$toast.success(`Run status updated to ${status.replace('_', ' ')}`)
-        
-            // OPTIMIZATION: Update local data instead of full refresh
-            this.updateLocalRunData(run.id, { status })
-        
+
         } catch (error) {
             console.error('Failed to update run status:', error)
+
+            // REVERT: Update UI back to original value on failure
+            this.updateLocalRunData(run.id, { status: originalStatus })
+
+            // Show error toast
             this.$toast.error('Failed to update run status')
         }
     }
 
     async updateRunQC(run: FleetJobGcodeRun, qc: string | null) {
+        // Store original value for potential revert
+        const originalQC = run.qc
+
         try {
+            // OPTIMISTIC UPDATE: Update UI immediately before API call
+            this.updateLocalRunData(run.id, { qc })
+
+            // Send API request
             await this.$store.dispatch('fleet/jobs/updateJobGcodeRunQC', {
                 runId: run.id,
                 qc: qc
             })
+
+            // Success - show success toast
             this.$toast.success(`QC updated to ${qc || 'not set'}`)
-        
-            // OPTIMIZATION: Update local data instead of full refresh
-            this.updateLocalRunData(run.id, { qc })
-        
+
         } catch (error) {
             console.error('Failed to update run QC:', error)
+
+            // REVERT: Update UI back to original value on failure
+            this.updateLocalRunData(run.id, { qc: originalQC })
+
+            // Show error toast
             this.$toast.error('Failed to update QC')
         }
     }
 
-    // HELPER METHOD - Update local run data efficiently
     updateLocalRunData(runId: string, updates: Partial<FleetJobGcodeRun>) {
         // Update gcodeRuns array if viewing runs dialog
         if (this.gcodeRuns && this.gcodeRuns.length > 0) {
             const runIndex = this.gcodeRuns.findIndex(r => r.id === runId)
             if (runIndex !== -1) {
-                this.gcodeRuns[runIndex] = { ...this.gcodeRuns[runIndex], ...updates }
+                // Use Vue.set for proper reactivity in Vue 2
+                this.$set(this.gcodeRuns, runIndex, { ...this.gcodeRuns[runIndex], ...updates })
             }
         }
-    
+
         // Update allJobRuns data
         Object.keys(this.allJobRuns).forEach(gcodeId => {
             const runs = this.allJobRuns[gcodeId]
             const runIndex = runs.findIndex(r => r.id === runId)
             if (runIndex !== -1) {
-                runs[runIndex] = { ...runs[runIndex], ...updates }
+                // Use Vue.set for proper reactivity in Vue 2
+                this.$set(runs, runIndex, { ...runs[runIndex], ...updates })
                 // Clear cache for this gcode since data changed
                 this.clearRunStatisticsCache(gcodeId)
             }
         })
+
+        // Force update to ensure computed properties recalculate
+        this.$forceUpdate()
     }
 
     async deleteRun(run: FleetJobGcodeRun) {
@@ -2206,6 +2232,8 @@ export default class JobListPanel extends Mixins(BaseMixin) {
 
     // Update the existing openCreateRunDialog method:
     openCreateRunDialog() {
+        this.$toast.error('This is for debugging. Runs should be auto generated')
+        /*
         this.createRunDialog.isEdit = false
         this.createRunDialog.show = true
     
@@ -2214,6 +2242,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         if (availablePrinters.length > 0) {
             this.createRunDialog.form.printer_hostname = availablePrinters[0].value
         }
+        */
     }
 
     getPrinterChipColor(printer: any): string {
