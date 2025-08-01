@@ -717,10 +717,10 @@
             this.loadingEnqueueAll = true
 
             try {
-                // Find compatible printers for ALL gcode files (intersection)
-                let compatiblePrinters: any[] = []
-                let hasIncompatible = false
+                const incompatibleFiles = []
+                const compatibleFiles = []
 
+                // Check compatibility for each gcode file independently
                 for (const gcode of this.gcodeFiles) {
                     const compatibility = await this.$store.dispatch(
                         'fleet/jobs/checkPrinterCompatibility',
@@ -731,64 +731,97 @@
                     };
 
                     if (!compatibility.has_compatible) {
-                        hasIncompatible = true
-                        this.$toast.warning(`❌ Cannot enqueue all: ${gcode.gcode_filename} has no compatible printers`)
-                        return
-                    }
-
-                    // For first gcode, set the compatible printers
-                    if (compatiblePrinters.length === 0) {
-                        compatiblePrinters = compatibility.compatible_printers
+                        incompatibleFiles.push(gcode.gcode_filename)
                     } else {
-                        // Find intersection with previous compatible printers
-                        const currentHostnames = compatibility.compatible_printers.map((p: any) => p.hostname)
-                        compatiblePrinters = compatiblePrinters.filter((p: any) =>
-                            currentHostnames.includes(p.hostname)
-                        )
-                    }
-
-                    // If no common compatible printers, stop
-                    if (compatiblePrinters.length === 0) {
-                        this.$toast.warning(`❌ Cannot enqueue all: No printers compatible with all gcode files`)
-                        return
+                        compatibleFiles.push({
+                            gcode,
+                            printers: compatibility.compatible_printers
+                        })
                     }
                 }
 
-                if (compatiblePrinters.length === 0) {
-                    this.$toast.warning(`❌ Cannot enqueue all: No printers compatible with all gcode files`)
+                // Show warning for incompatible files but continue with compatible ones
+                if (incompatibleFiles.length > 0) {
+                    this.$toast.warning(
+                        `⚠️ ${incompatibleFiles.length} file(s) have no compatible printers: ${incompatibleFiles.join(', ')}`
+                    )
+                }
+
+                // If no files can be processed, exit
+                if (compatibleFiles.length === 0) {
+                    this.$toast.error('❌ No gcode files have compatible printers')
                     return
                 }
 
-                const printerHostnames = compatiblePrinters.map(printer => printer.hostname)
+                console.log(`🚀 Enqueueing ${compatibleFiles.length} gcode files (${incompatibleFiles.length} skipped)`)
 
-                console.log(`🚀 Enqueueing all job gcodes to ${printerHostnames.length} compatible printers`)
+                // Process each compatible file individually
+                let totalEnqueuedRuns = 0
+                const processedFiles = []
+                const failedFiles = []
 
-                // Enqueue all gcodes to compatible printers
-                const response = await this.$store.dispatch('fleet/jobs/enqueueAllJobGcodes', {
-                    jobId: this.job.id,
-                    request: {
-                        gcode_filename: '', // Not used for enqueue-all
-                        printer_hostnames: printerHostnames,
-                        runs_per_printer: 0 // Not used - each gcode uses its required_runs
-                    }
-                })
+                for (const { gcode, printers } of compatibleFiles) {
+                    try {
+                        const printerHostnames = printers.map(printer => printer.hostname)
 
-                if (response.success) {
-                    this.$toast.success(`✅ Enqueued ${response.enqueued_count} total runs for ${this.gcodeFiles.length} gcode files`)
+                        // ✅ FIX: Prepend fleet_gcodes/ directory path
+                        const fullGcodePath = gcode.gcode_filename.startsWith('fleet_gcodes/')
+                            ? gcode.gcode_filename
+                            : `fleet_gcodes/${gcode.gcode_filename}`;
 
-                    // Update local queue status cache for all gcodes
-                    if (response.queue_status?.gcode_status) {
-                        Object.entries(response.queue_status.gcode_status).forEach(([gcodeId, queueStatus]) => {
-                            this.$set(this.queueStatusCache, gcodeId, queueStatus)
+                        const response = await this.$store.dispatch('fleet/jobs/enqueueGcodeToprinters', {
+                            gcodeId: gcode.id,
+                            request: {
+                                gcode_filename: fullGcodePath,  // ✅ Use full path instead of just filename
+                                printer_hostnames: printerHostnames,
+                                runs_per_printer: gcode.required_runs
+                            }
+                        })
+
+                        if (response.success) {
+                            totalEnqueuedRuns += (response.enqueued_count || 0)
+                            processedFiles.push(gcode.gcode_filename)
+
+                            // Update local queue status cache
+                            if (response.queue_status) {
+                                this.$set(this.queueStatusCache, gcode.id, response.queue_status)
+                            }
+                        } else {
+                            failedFiles.push({
+                                filename: gcode.gcode_filename,
+                                error: response.error || 'Unknown error'
+                            })
+                        }
+                    } catch (error) {
+                        console.error(`❌ Error enqueueing ${gcode.gcode_filename}:`, error)
+                        failedFiles.push({
+                            filename: gcode.gcode_filename,
+                            error: error.message || 'Unknown error'
                         })
                     }
-                } else {
-                    this.$toast.error(`❌ Failed to enqueue all gcodes: ${response.error || 'Unknown error'}`)
+                }
+
+                // Show comprehensive results
+                if (processedFiles.length > 0) {
+                    this.$toast.success(
+                        `✅ Successfully enqueued ${totalEnqueuedRuns} runs for ${processedFiles.length} files: ${processedFiles.join(', ')}`
+                    )
+                }
+
+                if (failedFiles.length > 0) {
+                    const failedNames = failedFiles.map(f => f.filename).join(', ')
+                    this.$toast.error(
+                        `❌ Failed to enqueue ${failedFiles.length} files: ${failedNames}`
+                    )
+                    // Optionally log detailed errors
+                    failedFiles.forEach(f => {
+                        console.error(`Failed to enqueue ${f.filename}: ${f.error}`)
+                    })
                 }
 
             } catch (error) {
                 console.error('❌ Enqueue all error:', error)
-                this.$toast.error(`❌ Failed to enqueue all gcodes`)
+                this.$toast.error(`❌ Failed to enqueue gcodes: ${error.message || 'Unknown error'}`)
             } finally {
                 this.loadingEnqueueAll = false
             }
