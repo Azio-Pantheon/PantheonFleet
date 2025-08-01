@@ -202,10 +202,6 @@
                                         <v-card class="pa-3" style="max-width: 280px;">
                                             <div class="text-subtitle2 mb-2">Progress Bar Legend</div>
                                             <div class="legend-item mb-1">
-                                                <div class="legend-color" style="background-color: #bdbdbd;"></div>
-                                                <span class="text-caption">Gray: Runs still needed</span>
-                                            </div>
-                                            <div class="legend-item mb-1">
                                                 <div class="legend-color breathing-blue" style="background-color: #2196f3;"></div>
                                                 <span class="text-caption">Rolling blue: In progress</span>
                                             </div>
@@ -216,6 +212,10 @@
                                             <div class="legend-item mb-1">
                                                 <div class="legend-color" style="background-color: #4caf50;"></div>
                                                 <span class="text-caption">Green: Passed QC</span>
+                                            </div>
+                                            <div class="legend-item mb-1">
+                                                <div class="legend-color" style="background-color: #bdbdbd;"></div>
+                                                <span class="text-caption">Gray: Runs still needed</span>
                                             </div>
                                             <div class="legend-item">
                                                 <div class="legend-color" style="background-color: #f44336;"></div>
@@ -359,12 +359,6 @@
                                         <div v-else class="d-flex align-center">
                                             <!-- Main progress bar -->
                                             <div class="gcode-progress-bar" style="height: 22px; border-radius: 11px; overflow: hidden; flex: 1; position: relative; background-color: #e8e8e8; border: 1px solid #ccc; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
-                                                <!-- Gray portion (remaining needed) -->
-                                                <div v-if="getRunStatistics(gcode).percentages.remaining > 0"
-                                                     class="progress-segment remaining"
-                                                     :style="`width: ${getRunStatistics(gcode).percentages.remaining}%; background-color: #9e9e9e; height: 100%; float: left;`">
-                                                </div>
-
                                                 <!-- Breathing blue portion (in progress) -->
                                                 <div v-if="getRunStatistics(gcode).percentages.inProgress > 0"
                                                      class="progress-segment in-progress breathing-blue"
@@ -376,7 +370,11 @@
                                                      class="progress-segment completed"
                                                      :style="`width: ${getRunStatistics(gcode).percentages.completed}%; background-color: #2196f3; height: 100%; float: left;`">
                                                 </div>
-
+                                                <!-- Gray portion (remaining needed) -->
+                                                <div v-if="getRunStatistics(gcode).percentages.remaining > 0"
+                                                     class="progress-segment remaining"
+                                                     :style="`width: ${getRunStatistics(gcode).percentages.remaining}%; background-color: #9e9e9e; height: 100%; float: left;`">
+                                                </div>
                                                 <!-- Green portion (passed QC) -->
                                                 <div v-if="getRunStatistics(gcode).percentages.passed > 0"
                                                      class="progress-segment passed"
@@ -666,11 +664,16 @@
 
                 console.log(`🚀 Enqueueing ${gcode.gcode_filename} to ${printerHostnames.length} compatible printers`)
 
+                // ✅ FIX: Prepend fleet_gcodes/ directory path
+                const fullGcodePath = gcode.gcode_filename.startsWith('fleet_gcodes/')
+                    ? gcode.gcode_filename
+                    : `fleet_gcodes/${gcode.gcode_filename}`;
+
                 // Enqueue to compatible printers
                 const response = await this.$store.dispatch('fleet/jobs/enqueueGcodeToprinters', {
                     gcodeId: gcode.id,
                     request: {
-                        gcode_filename: gcode.gcode_filename,
+                        gcode_filename: fullGcodePath,  // ✅ Use full path instead of just filename
                         printer_hostnames: printerHostnames,
                         runs_per_printer: gcode.required_runs
                     }
