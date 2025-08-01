@@ -1,7 +1,7 @@
 import { getDefaultState } from './index'
 import Vue from 'vue'
 import { MutationTree } from 'vuex'
-import { FleetJobsState, FleetJob, FleetCustomer } from './types'
+import { FleetJobsState, FleetJob, FleetCustomer, FleetGcodeQueueStatus } from './types'
 
 export const mutations: MutationTree<FleetJobsState> = {
     reset(state) {
@@ -97,4 +97,110 @@ export const mutations: MutationTree<FleetJobsState> = {
         Vue.set(state, 'customers', filteredCustomers)
     },
 
+    // ===========================================
+    // QUEUE MANAGEMENT MUTATIONS - IMPLEMENTED
+    // ===========================================
+
+    // Update queue status for a specific gcode
+    updateGcodeQueueStatus(state, { gcodeId, queueStatus }: { gcodeId: string, queueStatus: FleetGcodeQueueStatus | null }) {
+        // Initialize queue status tracking in state if it doesn't exist
+        if (!state.queueStatus) {
+            Vue.set(state, 'queueStatus', {})
+        }
+
+        if (queueStatus) {
+            // Update or add queue status
+            Vue.set(state.queueStatus!, gcodeId, {
+                gcode_id: queueStatus.gcode_id || gcodeId,
+                total_queued: queueStatus.total_queued || 0,
+                required_runs: queueStatus.required_runs || 0,
+                queued_per_printer: queueStatus.queued_per_printer || {},
+                last_updated: queueStatus.last_updated || new Date().toISOString()
+            })
+
+            console.log(`✅ [Queue Mutation] Updated queue status for gcode ${gcodeId}:`, {
+                total_queued: queueStatus.total_queued,
+                printers: Object.keys(queueStatus.queued_per_printer || {}).length
+            })
+        } else {
+            // Remove queue status (null value)
+            if (state.queueStatus && state.queueStatus[gcodeId]) {
+                Vue.delete(state.queueStatus, gcodeId)
+                console.log(`🗑️ [Queue Mutation] Removed queue status for gcode ${gcodeId}`)
+            }
+        }
+    },
+
+    // Clear all queue statuses (useful for refresh operations)
+    clearAllQueueStatuses(state) {
+        Vue.set(state, 'queueStatus', {})
+        console.log('🗑️ [Queue Mutation] Cleared all queue statuses')
+    },
+
+    // Optimistic update for enqueue operations
+    updateGcodeQueueStatusOptimistic(state, { gcodeId, enqueuedCount, printerHostnames }: {
+        gcodeId: string,
+        enqueuedCount: number,
+        printerHostnames: string[]
+    }) {
+        // Initialize queue status tracking in state if it doesn't exist
+        if (!state.queueStatus) {
+            Vue.set(state, 'queueStatus', {})
+        }
+
+        // Get existing status or create new one
+        const existingStatus = state.queueStatus![gcodeId] || {
+            gcode_id: gcodeId,
+            total_queued: 0,
+            required_runs: 0,
+            queued_per_printer: {},
+            last_updated: new Date().toISOString()
+        }
+
+        // Calculate new queue counts
+        const runsPerPrinter = Math.ceil(enqueuedCount / printerHostnames.length)
+        const updatedQueuedPerPrinter = { ...existingStatus.queued_per_printer }
+
+        printerHostnames.forEach(hostname => {
+            updatedQueuedPerPrinter[hostname] = (updatedQueuedPerPrinter[hostname] || 0) + runsPerPrinter
+        })
+
+        // Update status
+        const updatedStatus = {
+            ...existingStatus,
+            total_queued: existingStatus.total_queued + enqueuedCount,
+            queued_per_printer: updatedQueuedPerPrinter,
+            last_updated: new Date().toISOString()
+        }
+
+        Vue.set(state.queueStatus!, gcodeId, updatedStatus)
+
+        console.log(`🚀 [Queue Mutation] Optimistic update for gcode ${gcodeId}:`, {
+            added: enqueuedCount,
+            total: updatedStatus.total_queued,
+            printers: printerHostnames
+        })
+    },
+
+    // Batch update for multiple gcode queue statuses
+    updateMultipleGcodeQueueStatuses(state, queueStatuses: { [gcodeId: string]: FleetGcodeQueueStatus }) {
+        // Initialize queue status tracking in state if it doesn't exist
+        if (!state.queueStatus) {
+            Vue.set(state, 'queueStatus', {})
+        }
+
+        Object.entries(queueStatuses).forEach(([gcodeId, queueStatus]) => {
+            if (queueStatus) {
+                Vue.set(state.queueStatus!, gcodeId, {
+                    gcode_id: queueStatus.gcode_id || gcodeId,
+                    total_queued: queueStatus.total_queued || 0,
+                    required_runs: queueStatus.required_runs || 0,
+                    queued_per_printer: queueStatus.queued_per_printer || {},
+                    last_updated: queueStatus.last_updated || new Date().toISOString()
+                })
+            }
+        })
+
+        console.log(`✅ [Queue Mutation] Batch updated ${Object.keys(queueStatuses).length} queue statuses`)
+    }
 }

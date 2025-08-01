@@ -2,6 +2,9 @@ import Vue from 'vue'
 import { ActionTree } from 'vuex'
 import { FleetJobsState, FleetJob, FleetCustomer, FleetJobGcode } from './types'
 import { FleetJobGcodeRun, FleetJobGcodeRunCreate, FleetJobGcodeRunUpdate } from './types'
+// Import new queue types
+import { FleetEnqueueRequest, FleetEnqueueResponse, FleetJobEnqueueAllResponse } from './types'
+import { FleetGcodeQueueStatus, FleetPrinterInfo, FleetCompatibilityCheck } from './types'
 import { RootState } from '@/store/types'
 import axios from 'axios'
 
@@ -247,4 +250,167 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
         }
     },
 
+    // ===========================================
+    // NEW QUEUE MANAGEMENT ACTIONS - IMPLEMENTED
+    // ===========================================
+
+    // Enqueue individual gcode file to specific printers
+    async enqueueGcodeToprinters({ commit, rootState }, { gcodeId, request }: { gcodeId: string, request: FleetEnqueueRequest }): Promise<FleetEnqueueResponse> {
+        try {
+            console.log(`🚀 [Queue] Enqueueing gcode ${gcodeId} to printers:`, request.printer_hostnames)
+
+            const response = await axios.post(`${FLEET_API_URL}/gcode/${gcodeId}/enqueue`, request)
+
+            console.log(`✅ [Queue] Enqueue response:`, response.data)
+
+            // Store queue status in local state if success
+            if (response.data.success && response.data.queue_status) {
+                commit('updateGcodeQueueStatus', {
+                    gcodeId,
+                    queueStatus: response.data.queue_status
+                })
+            }
+
+            return response.data
+        } catch (error) {
+            console.error('❌ [Queue] Failed to enqueue gcode:', error)
+            throw error
+        }
+    },
+
+    // Enqueue all gcode files in a job
+    async enqueueAllJobGcodes({ commit, rootState }, { jobId, request }: { jobId: string, request: FleetEnqueueRequest }): Promise<FleetJobEnqueueAllResponse> {
+        try {
+            console.log(`🚀 [Queue] Enqueueing all job ${jobId} gcodes to printers:`, request.printer_hostnames)
+
+            const response = await axios.post(`${FLEET_API_URL}/jobs/${jobId}/gcode/enqueue-all`, request)
+
+            console.log(`✅ [Queue] Enqueue all response:`, response.data)
+
+            // Update queue status for all gcodes in job if success
+            if (response.data.success && response.data.queue_status?.gcode_status) {
+                Object.entries(response.data.queue_status.gcode_status).forEach(([gcodeId, queueStatus]) => {
+                    commit('updateGcodeQueueStatus', {
+                        gcodeId,
+                        queueStatus
+                    })
+                })
+            }
+
+            return response.data
+        } catch (error) {
+            console.error('❌ [Queue] Failed to enqueue all job gcodes:', error)
+            throw error
+        }
+    },
+
+    // Get queue status for specific gcode
+    async getGcodeQueueStatus({ commit }, gcodeId: string): Promise<FleetGcodeQueueStatus | null> {
+        try {
+            const response = await axios.get(`${FLEET_API_URL}/gcode/${gcodeId}/queue-status`)
+
+            // Update store with latest queue status
+            commit('updateGcodeQueueStatus', {
+                gcodeId,
+                queueStatus: response.data
+            })
+
+            return response.data
+        } catch (error: any) {
+            if (error.response?.status === 404) {
+                commit('updateGcodeQueueStatus', { gcodeId, queueStatus: null })
+                return null
+            }
+            console.error('❌ [Queue] Failed to get gcode queue status:', error)
+            throw error
+        }
+    },
+
+    // Get queue status for all gcodes in a job
+    async getJobQueueStatus({ commit }, jobId: string): Promise<{ [gcodeId: string]: FleetGcodeQueueStatus }> {
+        try {
+            const response = await axios.get(`${FLEET_API_URL}/jobs/${jobId}/queue-status`)
+
+            // Update store with latest queue statuses
+            Object.entries(response.data.gcode_status || {}).forEach(([gcodeId, queueStatus]) => {
+                commit('updateGcodeQueueStatus', {
+                    gcodeId,
+                    queueStatus
+                })
+            })
+
+            return response.data.gcode_status || {}
+        } catch (error) {
+            console.error('❌ [Queue] Failed to get job queue status:', error)
+            throw error
+        }
+    },
+
+    // Helper action for printer compatibility checking
+    checkPrinterCompatibility({ }, { gcode, rootState }: { gcode: FleetJobGcode, rootState: any }): FleetCompatibilityCheck {
+        const remotePrinters = rootState.gui?.remoteprinters?.printers || {}
+        const fleetPrinters = rootState.farm?.fleetDaemonPrinters || {}
+
+        const compatible: FleetPrinterInfo[] = []
+        const incompatible: FleetPrinterInfo[] = []
+
+        // Helper function to get printer model
+        const getPrinterModel = (hostname: string): 'HS3' | 'HS-Pro' | null => {
+            for (const printer of Object.values(remotePrinters)) {
+                if ((printer as any).hostname === hostname) {
+                    return (printer as any).printerModel ?? null
+                }
+            }
+            return null
+        }
+
+        // Check each remote printer for compatibility
+        Object.values(remotePrinters).forEach((printer: any) => {
+            const hostname = printer.hostname
+            if (!hostname) return
+
+            const printerModel = getPrinterModel(hostname)
+            const fleetData = fleetPrinters[hostname]
+            const currentFilament = fleetData?.toolhead?.filament_type
+            const printerState = fleetData?.print_stats?.state || 'unknown'
+
+            const printerInfo: FleetPrinterInfo = {
+                hostname,
+                printerModel,
+                filament_type: currentFilament,
+                status: printerState,
+                state: printerState
+            }
+
+            // Check printer model compatibility (if gcode has preferred printer)
+            const modelCompatible = !gcode.preferred_printer ||
+                gcode.preferred_printer === 'any' ||
+                printerModel === gcode.preferred_printer
+
+            // Check filament compatibility (allow N/A, null, empty, or exact match)
+            const filamentCompatible = !gcode.filament_type ||
+                gcode.filament_type === 'any' ||
+                !currentFilament ||
+                currentFilament === 'N/A' ||
+                currentFilament === '' ||
+                currentFilament === gcode.filament_type
+
+            // Check if printer is available (not printing or busy)
+            const isAvailable = printerState === 'standby' || printerState === 'ready' || printerState === 'complete'
+
+            // Printer is compatible if model and filament are compatible AND printer is available
+            if (modelCompatible && filamentCompatible && isAvailable) {
+                compatible.push(printerInfo)
+            } else {
+                incompatible.push(printerInfo)
+            }
+        })
+
+        return {
+            gcode,
+            compatible_printers: compatible,
+            incompatible_printers: incompatible,
+            has_compatible: compatible.length > 0
+        }
+    }
 }

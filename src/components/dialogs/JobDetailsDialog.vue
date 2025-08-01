@@ -224,6 +224,17 @@
                                         </v-card>
                                     </v-menu>
 
+                                    <!-- NEW: Enqueue All button -->
+                                    <v-btn color="orange"
+                                           small
+                                           class="ml-2"
+                                           :disabled="loadingGcodes || gcodeFiles.length === 0"
+                                           :loading="loadingEnqueueAll"
+                                           @click="enqueueAllGcodes">
+                                        <v-icon left small>{{ mdiPlay  }}</v-icon>
+                                        Enqueue All
+                                    </v-btn>
+
                                     <v-btn color="primary"
                                            small
                                            class="ml-2"
@@ -271,20 +282,33 @@
                                                 <span>{{ getGcodeFileStatusTooltip(gcode) }}</span>
                                             </v-tooltip>
 
-                                            <!-- File name with conditional coloring -->
+                                            <!-- UPDATED: File name now clickable -->
                                             <v-tooltip top>
                                                 <template #activator="{ on, attrs }">
-                                                    <div :class="[getGcodeFileNameColor(gcode), 'font-weight-bold', 'gcode-filename']"
-                                                         :style="`font-size: 14px; transition: color 0.3s ease;`"
+                                                    <div :class="[getGcodeFileNameColor(gcode), 'font-weight-bold', 'gcode-filename', 'clickable-filename']"
+                                                         :style="`font-size: 14px; transition: color 0.3s ease; cursor: pointer;`"
                                                          v-bind="attrs"
-                                                         v-on="on">
+                                                         v-on="on"
+                                                         @click="$emit('view-gcode-runs', gcode)">
                                                         {{ gcode.gcode_filename }}
                                                     </div>
                                                 </template>
-                                                <span>{{ getGcodeFileStatusTooltip(gcode) }}</span>
+                                                <span>Click to view print runs</span>
                                             </v-tooltip>
                                         </div>
                                         <div class="d-flex align-center">
+                                            <!-- NEW: Enqueue GCode button (replaces view button) -->
+                                            <v-btn icon
+                                                   small
+                                                   color="orange"
+                                                   class="elevation-1 mr-1"
+                                                   style="background-color: #ff9800 !important;"
+                                                   :loading="loadingEnqueueGcode[gcode.id]"
+                                                   @click="enqueueGcode(gcode)"
+                                                   title="Enqueue to printers">
+                                                <v-icon small color="white">{{ mdiPlay  }}</v-icon>
+                                            </v-btn>
+
                                             <v-btn icon
                                                    small
                                                    color="primary"
@@ -298,19 +322,10 @@
                                                    small
                                                    :color="getRunStatistics(gcode).totalRuns > 0 ? 'grey' : 'error'"
                                                    :disabled="getRunStatistics(gcode).totalRuns > 0"
-                                                   class="elevation-1 mr-1"
+                                                   class="elevation-1"
                                                    @click="$emit('delete-gcode', gcode)"
                                                    :title="getRunStatistics(gcode).totalRuns > 0 ? 'Cannot delete - has associated runs' : 'Delete GCode file'">
                                                 <v-icon small :color="getRunStatistics(gcode).totalRuns > 0 ? 'grey' : 'white'">{{ mdiDelete }}</v-icon>
-                                            </v-btn>
-                                            <v-btn icon
-                                                   small
-                                                   color="primary"
-                                                   class="elevation-1"
-                                                   style="background-color: #1976d2 !important;"
-                                                   @click="$emit('view-gcode-runs', gcode)"
-                                                   title="View print runs">
-                                                <v-icon small color="white">{{ mdiPlay }}</v-icon>
                                             </v-btn>
                                         </div>
                                     </div>
@@ -396,6 +411,25 @@
                                                 {{ getRunStatistics(gcode).completedNoQC }} awaiting QC
                                             </span>
                                         </div>
+
+                                        <!-- NEW: Queue status display -->
+                                        <div v-if="getQueueStatus(gcode)" class="queue-status-display mt-2" style="font-size: 11px; color: #ff9800; font-weight: 500;">
+                                            🔄 Queue: {{ getQueueStatus(gcode).total_queued }} jobs across {{ Object.keys(getQueueStatus(gcode).queued_per_printer).length }} printers
+                                            <v-tooltip top>
+                                                <template #activator="{ on, attrs }">
+                                                    <v-icon x-small color="orange" class="ml-1" v-bind="attrs" v-on="on">{{ mdiInformationOutline }}</v-icon>
+                                                </template>
+                                                <div>
+                                                    <div class="text-subtitle2 mb-1">Queue Details:</div>
+                                                    <div v-for="(count, hostname) in getQueueStatus(gcode).queued_per_printer" :key="hostname" class="text-caption">
+                                                        {{ hostname }}: {{ count }} queued
+                                                    </div>
+                                                    <div class="text-caption mt-1 grey--text">
+                                                        Last updated: {{ formatQueueTime(getQueueStatus(gcode).last_updated) }}
+                                                    </div>
+                                                </div>
+                                            </v-tooltip>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -408,424 +442,657 @@
 </template>
 
 <script lang="ts">
-import { Component, Mixins, Prop, Watch } from 'vue-property-decorator'
-import BaseMixin from '@/components/mixins/base'
-import Panel from '@/components/ui/Panel.vue'
-import {
-    mdiBriefcaseOutline,
-    mdiRefresh,
-    mdiCloseThick,
-    mdiPencil,
-    mdiChevronDown,
-    mdiPlay,
-    mdiCheck,
-    mdiCancel,
-    mdiAlertOutline,
-    mdiProgressClock,
-    mdiDelete,
-    mdiPlus,
-    mdiInformationOutline,
-    mdiCheckCircle,
-    mdiProgressClock,
-} from '@mdi/js'
+    import { Component, Mixins, Prop, Watch } from 'vue-property-decorator'
+    import BaseMixin from '@/components/mixins/base'
+    import Panel from '@/components/ui/Panel.vue'
+    import {
+        mdiBriefcaseOutline,
+        mdiRefresh,
+        mdiCloseThick,
+        mdiPencil,
+        mdiChevronDown,
+        mdiPlay,
+        mdiCheck,
+        mdiCancel,
+        mdiAlertOutline,
+        mdiProgressClock,
+        mdiDelete,
+        mdiPlus,
+        mdiInformationOutline,
+        mdiCheckCircle,
+    } from '@mdi/js'
 
-interface FleetJob {
-    id: string
-    customer_id: string
-    name: string
-    operator_name?: string
-    description?: string
-    job_type: string
-    priority: string
-    status: string
-    ready_to_ship: boolean
-    shipped: boolean
-    fulfilled_date?: string
-    due_date?: string
-    finished_date?: string
-    created_at: string
-    updated_at: string
-}
-
-interface FleetJobGcode {
-    id: string
-    job_id: string
-    gcode_filename: string
-    required_runs: number
-    preferred_printer: string
-    filament_type: string
-    created_at: string
-}
-
-interface FleetJobGcodeRun {
-    id: string
-    job_gcode_id: string
-    printer_hostname: string
-    started_at: string
-    completed_at?: string
-    status: string
-    moonraker_job_id?: string
-    notes?: string
-    qc?: string | null
-}
-
-@Component({
-    components: { Panel },
-})
-export default class JobDetailsDialog extends Mixins(BaseMixin) {
-    mdiBriefcaseOutline = mdiBriefcaseOutline
-    mdiRefresh = mdiRefresh
-    mdiCloseThick = mdiCloseThick
-    mdiPencil = mdiPencil
-    mdiChevronDown = mdiChevronDown
-    mdiPlay = mdiPlay
-    mdiCheck = mdiCheck
-    mdiCancel = mdiCancel
-    mdiAlertOutline = mdiAlertOutline
-    mdiProgressClock = mdiProgressClock
-    mdiDelete = mdiDelete
-    mdiPlus = mdiPlus
-    mdiInformationOutline = mdiInformationOutline
-    mdiCheckCircle = mdiCheckCircle
-    mdiProgressClock = mdiProgressClock
-
-    @Prop({ type: Boolean, default: false })
-    readonly value!: boolean
-
-    @Prop({ type: Object, default: null })
-    readonly job!: FleetJob | null
-
-    @Prop({ type: Array, default: () => [] })
-    readonly gcodeFiles!: FleetJobGcode[]
-
-    @Prop({ type: Object, default: () => ({}) })
-    readonly allJobRuns!: { [gcodeId: string]: FleetJobGcodeRun[] }
-
-    @Prop({ type: Boolean, default: false })
-    readonly loadingGcodes!: boolean
-
-    @Prop({ type: Boolean, default: false })
-    readonly loadingRuns!: boolean
-
-    private runStatisticsCache: { [gcodeId: string]: any } = {}
-
-    get dialogVisible() {
-        return this.value
+    interface FleetJob {
+        id: string
+        customer_id: string
+        name: string
+        operator_name?: string
+        description?: string
+        job_type: string
+        priority: string
+        status: string
+        ready_to_ship: boolean
+        shipped: boolean
+        fulfilled_date?: string
+        due_date?: string
+        finished_date?: string
+        created_at: string
+        updated_at: string
     }
 
-    set dialogVisible(val: boolean) {
-        this.$emit('input', val)
+    interface FleetJobGcode {
+        id: string
+        job_id: string
+        gcode_filename: string
+        required_runs: number
+        preferred_printer: string
+        filament_type: string
+        created_at: string
+        queue_status?: any
     }
 
-    get customers() {
-        return this.$store.state.fleet?.jobs?.customers ?? []
+    interface FleetJobGcodeRun {
+        id: string
+        job_gcode_id: string
+        printer_hostname: string
+        started_at: string
+        completed_at?: string
+        status: string
+        moonraker_job_id?: string
+        notes?: string
+        qc?: string | null
     }
 
-    get isLoadingJobDetails(): boolean {
-        return this.loadingGcodes || this.loadingRuns
+    interface FleetGcodeQueueStatus {
+        gcode_id: string
+        total_queued: number
+        required_runs: number
+        queued_per_printer: { [hostname: string]: number }
+        last_updated: string
     }
 
-    closeDialog() {
-        this.$emit('close')
-    }
+    @Component({
+        components: { Panel },
+    })
+    export default class JobDetailsDialog extends Mixins(BaseMixin) {
+        mdiBriefcaseOutline = mdiBriefcaseOutline
+        mdiRefresh = mdiRefresh
+        mdiCloseThick = mdiCloseThick
+        mdiPencil = mdiPencil
+        mdiChevronDown = mdiChevronDown
+        mdiPlay = mdiPlay
+        mdiCheck = mdiCheck
+        mdiCancel = mdiCancel
+        mdiAlertOutline = mdiAlertOutline
+        mdiProgressClock = mdiProgressClock
+        mdiDelete = mdiDelete
+        mdiPlus = mdiPlus
+        mdiInformationOutline = mdiInformationOutline
+        mdiCheckCircle = mdiCheckCircle
 
-    refreshJobDetails() {
-        this.$emit('refresh')
-    }
+        @Prop({ type: Boolean, default: false })
+        readonly value!: boolean
 
-    updateJobStatus(status: string) {
-        this.$emit('update-status', status)
-    }
+        @Prop({ type: Object, default: null })
+        readonly job!: FleetJob | null
 
-    getCustomerName(customerId: string) {
-        const customer = this.customers.find((c: any) => c.id === customerId)
-        return customer ? customer.name : 'Unknown Customer'
-    }
+        @Prop({ type: Array, default: () => [] })
+        readonly gcodeFiles!: FleetJobGcode[]
 
-    getStatusColor(status: string) {
-        const colors = {
-            pending: 'orange',
-            in_progress: 'blue',
-            complete: 'green',
-            cancelled: 'red',
-        }
-        return colors[status] || 'grey'
-    }
+        @Prop({ type: Object, default: () => ({}) })
+        readonly allJobRuns!: { [gcodeId: string]: FleetJobGcodeRun[] }
 
-    getStatusTextColor(status: string) {
-        return 'white'
-    }
+        @Prop({ type: Boolean, default: false })
+        readonly loadingGcodes!: boolean
 
-    getStatusIcon(status: string) {
-        switch (status) {
-            case 'pending':
-                return this.mdiAlertOutline
-            case 'in_progress':
-                return this.mdiProgressClock
-            case 'complete':
-                return this.mdiCheck
-            case 'cancelled':
-                return this.mdiCancel
-            default:
-                return this.mdiAlertOutline
-        }
-    }
+        @Prop({ type: Boolean, default: false })
+        readonly loadingRuns!: boolean
 
-    getPriorityColor(priority: string) {
-        switch (priority) {
-            case 'high':
-                return 'red'
-            case 'medium':
-                return 'orange'
-            case 'low':
-                return 'blue'
-            default:
-                return 'grey'
-        }
-    }
+        private runStatisticsCache: { [gcodeId: string]: any } = {}
+        private queueStatusCache: { [gcodeId: string]: FleetGcodeQueueStatus } = {}
+        private loadingEnqueueGcode: { [gcodeId: string]: boolean } = {}
+        private loadingEnqueueAll: boolean = false
 
-    getPriorityDisplay(priority: string) {
-        switch (priority) {
-            case 'high':
-                return 'High'
-            case 'medium':
-                return 'Medium'
-            case 'low':
-                return 'Low'
-            default:
-                return 'Unknown'
-        }
-    }
-
-    getDueDateClass(dueDate: string) {
-        if (!dueDate) return ''
-        const due = new Date(dueDate)
-        const now = new Date()
-        const diffTime = due.getTime() - now.getTime()
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-        if (diffDays < 0) return 'red--text font-weight-bold'
-        if (diffDays <= 1) return 'orange--text font-weight-bold'
-        if (diffDays <= 3) return 'amber--text'
-        return ''
-    }
-
-    formatDateTime(dateString: string) {
-        if (!dateString) return null
-        return new Date(dateString).toLocaleString()
-    }
-
-    getRunStatistics(gcode: FleetJobGcode) {
-        const cacheKey = `${gcode.id}-${gcode.required_runs}`
-        
-        // Use better cache key that includes runs data hash
-        const runs = this.allJobRuns[gcode.id] || []
-        const runsHash = runs.length ? runs.map(r => `${r.id}-${r.status}-${r.qc}`).join(',') : 'empty'
-        const fullCacheKey = `${cacheKey}-${runsHash}`
-        
-        if (this.runStatisticsCache[fullCacheKey] && !this.loadingRuns) {
-            return this.runStatisticsCache[fullCacheKey]
+        get dialogVisible() {
+            return this.value
         }
 
-        const requiredRuns = gcode.required_runs || 0
+        set dialogVisible(val: boolean) {
+            this.$emit('input', val)
+        }
 
-        if (!runs || runs.length === 0) {
-            const emptyStats = {
-                requiredRuns,
-                inProgress: 0,
-                completedNoQC: 0,
-                passedQC: 0,
-                totalFailed: 0,
-                technicalFailures: 0,
-                qcFailures: 0,
-                goodRuns: 0,
-                remainingNeeded: requiredRuns,
-                totalRuns: 0,
-                percentages: {
-                    remaining: 100,
+        get customers() {
+            return this.$store.state.fleet?.jobs?.customers ?? []
+        }
+
+        get isLoadingJobDetails(): boolean {
+            return this.loadingGcodes || this.loadingRuns
+        }
+
+        mounted() {
+            // Load queue status when dialog opens
+            if (this.job && this.gcodeFiles.length > 0) {
+                this.loadJobQueueStatus()
+            }
+        }
+
+        @Watch('gcodeFiles')
+        onGcodeFilesChanged() {
+            // Load queue status when gcode files change
+            if (this.job && this.gcodeFiles.length > 0) {
+                this.loadJobQueueStatus()
+            }
+        }
+
+        async loadJobQueueStatus() {
+            if (!this.job) return
+
+            try {
+                const queueStatus = await this.$store.dispatch('fleet/jobs/getJobQueueStatus', this.job.id)
+                this.queueStatusCache = queueStatus || {}
+            } catch (error) {
+                console.warn('Failed to load queue status:', error)
+            }
+        }
+
+        closeDialog() {
+            this.$emit('close')
+        }
+
+        async refreshJobDetails() {
+            this.$emit('refresh')
+            // Also refresh queue status
+            await this.loadJobQueueStatus()
+        }
+
+        updateJobStatus(status: string) {
+            this.$emit('update-status', status)
+        }
+
+        getCustomerName(customerId: string) {
+            const customer = this.customers.find((c: any) => c.id === customerId)
+            return customer ? customer.name : 'Unknown Customer'
+        }
+
+        // NEW: Queue-related methods
+        getPrinterModel(hostname: string): 'HS3' | 'HS-Pro' | null {
+            const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
+            for (const printer of Object.values(remotePrinters)) {
+                if ((printer as any).hostname === hostname) {
+                    return (printer as any).printerModel ?? null
+                }
+            }
+            return null
+        }
+
+        getQueueStatus(gcode: FleetJobGcode): FleetGcodeQueueStatus | null {
+            return this.queueStatusCache[gcode.id] || null
+        }
+
+        formatQueueTime(timestamp: string): string {
+            try {
+                return new Date(timestamp).toLocaleTimeString()
+            } catch {
+                return timestamp
+            }
+        }
+
+        async enqueueGcode(gcode: FleetJobGcode) {
+            const runs = this.allJobRuns[gcode.id] || [];
+            const passedCount = runs.filter(r => r.qc === 'pass').length;
+            if (passedCount >= gcode.required_runs) {
+                this.$toast.warning(
+                    `⚠️ Cannot enqueue ${gcode.gcode_filename}: already completed (${passedCount}/${gcode.required_runs} runs passed)`
+                );
+                return;
+            }
+            // Set loading state
+            this.$set(this.loadingEnqueueGcode, gcode.id, true)
+
+            try {
+                // Check printer compatibility
+                const compatibility = await this.$store.dispatch(
+                    'fleet/jobs/checkPrinterCompatibility',
+                    { gcode, rootState: this.$store.state }
+                )
+
+                if (!compatibility.has_compatible) {
+                    this.$toast.warning(`No compatible printers available for ${gcode.gcode_filename}. Required: ${gcode.preferred_printer} printer with ${gcode.filament_type} filament.`)
+                    return
+                }
+
+                // Get hostnames of compatible printers
+                const printerHostnames = compatibility.compatible_printers.map((printer: any) => printer.hostname)
+
+                console.log(`🚀 Enqueueing ${gcode.gcode_filename} to ${printerHostnames.length} compatible printers`)
+
+                // Enqueue to compatible printers
+                const response = await this.$store.dispatch('fleet/jobs/enqueueGcodeToprinters', {
+                    gcodeId: gcode.id,
+                    request: {
+                        gcode_filename: gcode.gcode_filename,
+                        printer_hostnames: printerHostnames,
+                        runs_per_printer: gcode.required_runs
+                    }
+                })
+
+                if (response.success) {
+                    this.$toast.success(`✅ Enqueued ${response.enqueued_count} runs for ${gcode.gcode_filename}`)
+
+                    // Update local queue status cache
+                    if (response.queue_status) {
+                        this.$set(this.queueStatusCache, gcode.id, response.queue_status)
+                    }
+                } else {
+                    this.$toast.error(`❌ Failed to enqueue ${gcode.gcode_filename}: ${response.error || 'Unknown error'}`)
+                }
+
+            } catch (error) {
+                console.error('❌ Enqueue error:', error)
+                this.$toast.error(`❌ Failed to enqueue ${gcode.gcode_filename}`)
+            } finally {
+                this.$set(this.loadingEnqueueGcode, gcode.id, false)
+            }
+        }
+
+        async enqueueAllGcodes() {
+            if (!this.job || this.gcodeFiles.length === 0) return
+
+            const completed = this.gcodeFiles.filter(gcode => {
+                const runs = this.allJobRuns[gcode.id] || [];
+                const passed = runs.filter(r => r.qc === 'pass').length;
+                return passed >= gcode.required_runs;
+            });
+            if (completed.length > 0) {
+                const names = completed.map(g => g.gcode_filename).join(', ');
+                this.$toast.warning(
+                    `⚠️ Cannot enqueue all: these files are already completed → ${names}`
+                );
+                return;
+            }
+
+            this.loadingEnqueueAll = true
+
+            try {
+                // Find compatible printers for ALL gcode files (intersection)
+                let compatiblePrinters: any[] = []
+                let hasIncompatible = false
+
+                for (const gcode of this.gcodeFiles) {
+                    const compatibility = await this.$store.dispatch(
+                        'fleet/jobs/checkPrinterCompatibility',
+                        { gcode, rootState: this.$store.state }
+                    ) as {
+                        has_compatible: boolean;
+                        compatible_printers: Array<{ hostname: string }>;
+                    };
+
+                    if (!compatibility.has_compatible) {
+                        hasIncompatible = true
+                        this.$toast.warning(`❌ Cannot enqueue all: ${gcode.gcode_filename} has no compatible printers`)
+                        return
+                    }
+
+                    // For first gcode, set the compatible printers
+                    if (compatiblePrinters.length === 0) {
+                        compatiblePrinters = compatibility.compatible_printers
+                    } else {
+                        // Find intersection with previous compatible printers
+                        const currentHostnames = compatibility.compatible_printers.map((p: any) => p.hostname)
+                        compatiblePrinters = compatiblePrinters.filter((p: any) =>
+                            currentHostnames.includes(p.hostname)
+                        )
+                    }
+
+                    // If no common compatible printers, stop
+                    if (compatiblePrinters.length === 0) {
+                        this.$toast.warning(`❌ Cannot enqueue all: No printers compatible with all gcode files`)
+                        return
+                    }
+                }
+
+                if (compatiblePrinters.length === 0) {
+                    this.$toast.warning(`❌ Cannot enqueue all: No printers compatible with all gcode files`)
+                    return
+                }
+
+                const printerHostnames = compatiblePrinters.map(printer => printer.hostname)
+
+                console.log(`🚀 Enqueueing all job gcodes to ${printerHostnames.length} compatible printers`)
+
+                // Enqueue all gcodes to compatible printers
+                const response = await this.$store.dispatch('fleet/jobs/enqueueAllJobGcodes', {
+                    jobId: this.job.id,
+                    request: {
+                        gcode_filename: '', // Not used for enqueue-all
+                        printer_hostnames: printerHostnames,
+                        runs_per_printer: 0 // Not used - each gcode uses its required_runs
+                    }
+                })
+
+                if (response.success) {
+                    this.$toast.success(`✅ Enqueued ${response.enqueued_count} total runs for ${this.gcodeFiles.length} gcode files`)
+
+                    // Update local queue status cache for all gcodes
+                    if (response.queue_status?.gcode_status) {
+                        Object.entries(response.queue_status.gcode_status).forEach(([gcodeId, queueStatus]) => {
+                            this.$set(this.queueStatusCache, gcodeId, queueStatus)
+                        })
+                    }
+                } else {
+                    this.$toast.error(`❌ Failed to enqueue all gcodes: ${response.error || 'Unknown error'}`)
+                }
+
+            } catch (error) {
+                console.error('❌ Enqueue all error:', error)
+                this.$toast.error(`❌ Failed to enqueue all gcodes`)
+            } finally {
+                this.loadingEnqueueAll = false
+            }
+        }
+
+        // Existing methods (unchanged)
+        getStatusColor(status: string) {
+            const colors = {
+                pending: 'orange',
+                in_progress: 'blue',
+                complete: 'green',
+                cancelled: 'red',
+            }
+            return colors[status] || 'grey'
+        }
+
+        getStatusTextColor(status: string) {
+            return 'white'
+        }
+
+        getStatusIcon(status: string) {
+            switch (status) {
+                case 'pending':
+                    return this.mdiAlertOutline
+                case 'in_progress':
+                    return this.mdiProgressClock
+                case 'complete':
+                    return this.mdiCheck
+                case 'cancelled':
+                    return this.mdiCancel
+                default:
+                    return this.mdiAlertOutline
+            }
+        }
+
+        getPriorityColor(priority: string) {
+            switch (priority) {
+                case 'high':
+                    return 'red'
+                case 'medium':
+                    return 'orange'
+                case 'low':
+                    return 'blue'
+                default:
+                    return 'grey'
+            }
+        }
+
+        getPriorityDisplay(priority: string) {
+            switch (priority) {
+                case 'high':
+                    return 'High'
+                case 'medium':
+                    return 'Medium'
+                case 'low':
+                    return 'Low'
+                default:
+                    return 'Unknown'
+            }
+        }
+
+        getDueDateClass(dueDate: string) {
+            if (!dueDate) return ''
+            const due = new Date(dueDate)
+            const now = new Date()
+            const diffTime = due.getTime() - now.getTime()
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+            if (diffDays < 0) return 'red--text font-weight-bold'
+            if (diffDays <= 1) return 'orange--text font-weight-bold'
+            if (diffDays <= 3) return 'amber--text'
+            return ''
+        }
+
+        formatDateTime(dateString: string) {
+            if (!dateString) return null
+            return new Date(dateString).toLocaleString()
+        }
+
+        getRunStatistics(gcode: FleetJobGcode) {
+            const cacheKey = `${gcode.id}-${gcode.required_runs}`
+
+            // Use better cache key that includes runs data hash
+            const runs = this.allJobRuns[gcode.id] || []
+            const runsHash = runs.length ? runs.map(r => `${r.id}-${r.status}-${r.qc}`).join(',') : 'empty'
+            const fullCacheKey = `${cacheKey}-${runsHash}`
+
+            if (this.runStatisticsCache[fullCacheKey] && !this.loadingRuns) {
+                return this.runStatisticsCache[fullCacheKey]
+            }
+
+            const requiredRuns = gcode.required_runs || 0
+
+            if (!runs || runs.length === 0) {
+                const emptyStats = {
+                    requiredRuns,
                     inProgress: 0,
-                    completed: 0,
-                    passed: 0,
+                    completedNoQC: 0,
+                    passedQC: 0,
+                    totalFailed: 0,
+                    technicalFailures: 0,
+                    qcFailures: 0,
+                    goodRuns: 0,
+                    remainingNeeded: requiredRuns,
+                    totalRuns: 0,
+                    percentages: {
+                        remaining: 100,
+                        inProgress: 0,
+                        completed: 0,
+                        passed: 0,
+                    }
+                }
+                this.runStatisticsCache[fullCacheKey] = emptyStats
+                return emptyStats
+            }
+
+            // Calculate all stats in one pass
+            let inProgress = 0, completedNoQC = 0, passedQC = 0, technicalFailures = 0, qcFailures = 0
+
+            runs.forEach(run => {
+                if (run.status === 'in_progress') {
+                    inProgress++
+                } else if (run.status === 'success') {
+                    if (!run.qc || run.qc === null) {
+                        completedNoQC++
+                    } else if (run.qc === 'pass') {
+                        passedQC++
+                    } else if (run.qc === 'fail') {
+                        qcFailures++
+                    }
+                } else if (run.status === 'fail' || run.status === 'cancelled') {
+                    technicalFailures++
+                }
+            })
+
+            const totalFailed = technicalFailures + qcFailures
+            const goodRuns = inProgress + completedNoQC + passedQC
+            const remainingNeeded = Math.max(0, requiredRuns - goodRuns)
+            const total = Math.max(requiredRuns, goodRuns)
+            const safeTotal = total > 0 ? total : 1
+
+            const stats = {
+                requiredRuns,
+                inProgress,
+                completedNoQC,
+                passedQC,
+                totalFailed,
+                technicalFailures,
+                qcFailures,
+                goodRuns,
+                remainingNeeded,
+                totalRuns: runs.length,
+                percentages: {
+                    remaining: Math.max(0, (remainingNeeded / safeTotal) * 100),
+                    inProgress: (inProgress / safeTotal) * 100,
+                    completed: (completedNoQC / safeTotal) * 100,
+                    passed: (passedQC / safeTotal) * 100,
                 }
             }
-            this.runStatisticsCache[fullCacheKey] = emptyStats
-            return emptyStats
+
+            this.runStatisticsCache[fullCacheKey] = stats
+            return stats
         }
 
-        // Calculate all stats in one pass
-        let inProgress = 0, completedNoQC = 0, passedQC = 0, technicalFailures = 0, qcFailures = 0
+        hasEnoughQCPassedRuns(gcode: FleetJobGcode): boolean {
+            const stats = this.getRunStatistics(gcode)
+            return stats.passedQC >= stats.requiredRuns
+        }
 
-        runs.forEach(run => {
-            if (run.status === 'in_progress') {
-                inProgress++
-            } else if (run.status === 'success') {
-                if (!run.qc || run.qc === null) {
-                    completedNoQC++
-                } else if (run.qc === 'pass') {
-                    passedQC++
-                } else if (run.qc === 'fail') {
-                    qcFailures++
-                }
-            } else if (run.status === 'fail' || run.status === 'cancelled') {
-                technicalFailures++
-            }
-        })
+        getGcodeFileNameColor(gcode: FleetJobGcode): string {
+            return this.hasEnoughQCPassedRuns(gcode) ? 'green--text' : 'blue--text'
+        }
 
-        const totalFailed = technicalFailures + qcFailures
-        const goodRuns = inProgress + completedNoQC + passedQC
-        const remainingNeeded = Math.max(0, requiredRuns - goodRuns)
-        const total = Math.max(requiredRuns, goodRuns)
-        const safeTotal = total > 0 ? total : 1
+        getGcodeFileStatusColor(gcode: FleetJobGcode): string {
+            return this.hasEnoughQCPassedRuns(gcode) ? 'green' : 'blue'
+        }
 
-        const stats = {
-            requiredRuns,
-            inProgress,
-            completedNoQC,
-            passedQC,
-            totalFailed,
-            technicalFailures,
-            qcFailures,
-            goodRuns,
-            remainingNeeded,
-            totalRuns: runs.length,
-            percentages: {
-                remaining: Math.max(0, (remainingNeeded / safeTotal) * 100),
-                inProgress: (inProgress / safeTotal) * 100,
-                completed: (completedNoQC / safeTotal) * 100,
-                passed: (passedQC / safeTotal) * 100,
+        getGcodeFileStatusTextColor(gcode: FleetJobGcode): string {
+            return 'white'
+        }
+
+        getGcodeFileStatusIcon(gcode: FleetJobGcode): string {
+            return this.hasEnoughQCPassedRuns(gcode) ? this.mdiCheckCircle : this.mdiProgressClock
+        }
+
+        getGcodeFileStatusTooltip(gcode: FleetJobGcode): string {
+            const stats = this.getRunStatistics(gcode)
+
+            if (this.hasEnoughQCPassedRuns(gcode)) {
+                return `✅ QC Complete: ${stats.passedQC}/${stats.requiredRuns} runs passed`
+            } else {
+                const remaining = stats.requiredRuns - stats.passedQC
+                return `🔄 QC Pending: ${stats.passedQC}/${stats.requiredRuns} passed, ${remaining} more needed`
             }
         }
 
-        this.runStatisticsCache[fullCacheKey] = stats
-        return stats
-    }
-
-    hasEnoughQCPassedRuns(gcode: FleetJobGcode): boolean {
-        const stats = this.getRunStatistics(gcode)
-        return stats.passedQC >= stats.requiredRuns
-    }
-
-    getGcodeFileNameColor(gcode: FleetJobGcode): string {
-        return this.hasEnoughQCPassedRuns(gcode) ? 'green--text' : 'blue--text'
-    }
-
-    getGcodeFileStatusColor(gcode: FleetJobGcode): string {
-        return this.hasEnoughQCPassedRuns(gcode) ? 'green' : 'blue'
-    }
-
-    getGcodeFileStatusTextColor(gcode: FleetJobGcode): string {
-        return 'white'
-    }
-
-    getGcodeFileStatusIcon(gcode: FleetJobGcode): string {
-        return this.hasEnoughQCPassedRuns(gcode) ? this.mdiCheckCircle : this.mdiProgressClock
-    }
-
-    getGcodeFileStatusTooltip(gcode: FleetJobGcode): string {
-        const stats = this.getRunStatistics(gcode)
-
-        if (this.hasEnoughQCPassedRuns(gcode)) {
-            return `✅ QC Complete: ${stats.passedQC}/${stats.requiredRuns} runs passed`
-        } else {
-            const remaining = stats.requiredRuns - stats.passedQC
-            return `🔄 QC Pending: ${stats.passedQC}/${stats.requiredRuns} passed, ${remaining} more needed`
+        @Watch('allJobRuns', { deep: true })
+        onAllJobRunsChanged() {
+            // Clear cache when runs data changes
+            setTimeout(() => {
+                this.runStatisticsCache = {}
+            }, 100)
         }
     }
-
-    @Watch('allJobRuns', { deep: true })
-    onAllJobRunsChanged() {
-        // Clear cache when runs data changes
-        setTimeout(() => {
-            this.runStatisticsCache = {}
-        }, 100)
-    }
-}
 </script>
 
 <style scoped>
-.breathing-blue {
-    background: linear-gradient(90deg, #1976d2 0%, #2196f3 25%, #64b5f6 50%, #2196f3 75%, #1976d2 100% );
-    background-size: 200% 100%;
-    animation: roll 2s linear infinite;
-    position: relative;
-    overflow: hidden;
-}
-
-@keyframes roll {
-    0% {
-        background-position: 200% 0;
+    .breathing-blue {
+        background: linear-gradient(90deg, #1976d2 0%, #2196f3 25%, #64b5f6 50%, #2196f3 75%, #1976d2 100% );
+        background-size: 200% 100%;
+        animation: roll 2s linear infinite;
+        position: relative;
+        overflow: hidden;
     }
-    100% {
-        background-position: -200% 0;
+
+    @keyframes roll {
+        0% {
+            background-position: 200% 0;
+        }
+
+        100% {
+            background-position: -200% 0;
+        }
     }
-}
 
-/* Progress bar styling */
-.gcode-progress-bar {
-    transition: all 0.3s ease;
-}
-
-.progress-segment {
-    transition: width 0.3s ease;
-}
-
-.gcode-file-item {
-    transition: box-shadow 0.2s ease;
-}
-
-.gcode-file-item:hover {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-/* Failure bar styling */
-.failure-bar {
-    transition: all 0.3s ease;
-}
-
-.failure-bar:hover {
-    transform: scale(1.05);
-}
-
-/* Statistics text styling */
-.gcode-progress-stats {
-    font-family: 'Roboto Mono', monospace;
-}
-
-/* Legend styling */
-.legend-item {
-    display: flex;
-    align-items: center;
-}
-
-.legend-color {
-    width: 16px;
-    height: 12px;
-    border-radius: 2px;
-    margin-right: 8px;
-    display: inline-block;
-}
-
-.gcode-skeleton {
-    opacity: 0.7;
-    animation: pulse 1.5s ease-in-out infinite alternate;
-}
-
-@keyframes pulse {
-    0% {
-        opacity: 0.6;
+    /* Clickable filename styling */
+    .clickable-filename:hover {
+        text-decoration: underline !important;
+        opacity: 0.8;
     }
-    100% {
-        opacity: 1;
+
+    /* Progress bar styling */
+    .gcode-progress-bar {
+        transition: all 0.3s ease;
     }
-}
 
-/* Smooth transitions for data loading */
-.gcode-file-item {
-    transition: all 0.3s ease;
-}
+    .progress-segment {
+        transition: width 0.3s ease;
+    }
 
-.gcode-file-item.loading {
-    opacity: 0.5;
-    pointer-events: none;
-}
+    .gcode-file-item {
+        transition: box-shadow 0.2s ease;
+    }
+
+        .gcode-file-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+    /* Failure bar styling */
+    .failure-bar {
+        transition: all 0.3s ease;
+    }
+
+        .failure-bar:hover {
+            transform: scale(1.05);
+        }
+
+    /* Statistics text styling */
+    .gcode-progress-stats {
+        font-family: 'Roboto Mono', monospace;
+    }
+
+    /* Queue status styling */
+    .queue-status-display {
+        font-family: 'Roboto Mono', monospace;
+        border-left: 3px solid #ff9800;
+        padding-left: 8px;
+        background-color: rgba(255, 152, 0, 0.1);
+        border-radius: 0 4px 4px 0;
+    }
+
+    /* Legend styling */
+    .legend-item {
+        display: flex;
+        align-items: center;
+    }
+
+    .legend-color {
+        width: 16px;
+        height: 12px;
+        border-radius: 2px;
+        margin-right: 8px;
+        display: inline-block;
+    }
+
+    .gcode-skeleton {
+        opacity: 0.7;
+        animation: pulse 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+        0% {
+            opacity: 0.6;
+        }
+
+        100% {
+            opacity: 1;
+        }
+    }
+
+    /* Smooth transitions for data loading */
+    .gcode-file-item {
+        transition: all 0.3s ease;
+    }
+
+        .gcode-file-item.loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
 </style>
