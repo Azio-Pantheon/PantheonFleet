@@ -317,8 +317,12 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
 
             return response.data
         } catch (error: any) {
-            if (error.response?.status === 404) {
-                commit('updateGcodeQueueStatus', { gcodeId, queueStatus: null })
+            if (error?.response?.status === 404) {
+                // No queue status found - clear any existing status
+                commit('updateGcodeQueueStatus', {
+                    gcodeId,
+                    queueStatus: null
+                })
                 return null
             }
             console.error('❌ [Queue] Failed to get gcode queue status:', error)
@@ -374,6 +378,9 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
             const currentFilament = fleetData?.toolhead?.filament_type
             const printerState = fleetData?.print_stats?.state || 'unknown'
 
+            // NEW: Check fleet connection status
+            const isFleetConnected = fleetData?.fleet_to_printer_ws === true
+
             const printerInfo: FleetPrinterInfo = {
                 hostname,
                 printerModel,
@@ -395,11 +402,8 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
                 currentFilament === '' ||
                 currentFilament === gcode.filament_type
 
-            // Check if printer is available (not printing or busy)
-            const isAvailable = printerState === 'standby' || printerState === 'ready' || printerState === 'complete'
-
-            // Printer is compatible if model and filament are compatible AND printer is available
-            if (modelCompatible && filamentCompatible && isAvailable) {
+            // Printer is compatible if model, filament, AND fleet connection are all good
+            if (modelCompatible && filamentCompatible && isFleetConnected) {
                 compatible.push(printerInfo)
             } else {
                 incompatible.push(printerInfo)
