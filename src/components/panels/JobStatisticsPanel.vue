@@ -125,21 +125,6 @@
                                     </div>
                                 </v-col>
                             </v-row>
-                            <v-row class="mt-2">
-                                <v-col cols="12">
-                                    <div class="text-center">
-                                        <div class="text-body-2">Completion Rate</div>
-                                        <v-progress-linear :value="completionRate"
-                                                           color="success"
-                                                           height="15"
-                                                           class="mt-1">
-                                            <template v-slot:default>
-                                                <strong>{{ Math.round(completionRate) }}%</strong>
-                                            </template>
-                                        </v-progress-linear>
-                                    </div>
-                                </v-col>
-                            </v-row>
                         </v-card-text>
                     </v-card>
                 </v-col>
@@ -266,11 +251,6 @@ export default class JobStatisticsPanel extends Mixins(BaseMixin) {
 
     get lowPriorityPercentage() {
         return this.totalJobs > 0 ? (this.lowPriorityJobs / this.totalJobs) * 100 : 0
-    }
-
-    get completionRate() {
-        const totalFinishedJobs = this.completedJobs + this.cancelledJobs
-        return this.totalJobs > 0 ? (this.completedJobs / this.totalJobs) * 100 : 0
     }
 
     viewOverdueJobs() {
