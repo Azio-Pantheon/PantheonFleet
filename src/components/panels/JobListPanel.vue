@@ -266,7 +266,9 @@
                             @add-gcode="onJobDetailsAddGcode"
                             @edit-gcode="onJobDetailsEditGcode"
                             @delete-gcode="onJobDetailsDeleteGcode"
-                            @view-gcode-runs="onJobDetailsViewGcodeRuns" />
+                            @view-gcode-runs="onJobDetailsViewGcodeRuns"
+                            @update-run-status="onUpdateRunStatus"
+                            @update-run-qc="onUpdateRunQC" />
 
         <!-- Create/Edit Job Dialog -->
         <create-new-job-dialog ref="createJobDialog"
