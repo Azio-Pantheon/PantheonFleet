@@ -873,7 +873,17 @@ export default class JobListPanel extends Mixins(BaseMixin) {
 
             console.log('✅ Received complete job data:', response)
 
-            // Extract the data from the complete response
+            // 🔥 FIX: Update the job data in the dialog with fresh data from API
+            if (response.job && this.detailsDialog.item) {
+                this.detailsDialog.item = {
+                    ...this.detailsDialog.item,
+                    ...response.job,
+                    // Keep the original object reference structure
+                }
+                console.log('✅ Updated job status to:', response.job.status)
+            }
+
+            // Extract the gcode files data from the complete response
             this.jobGcodes = response.gcode_files || []
 
             // Build allJobRuns from the complete response
@@ -887,9 +897,16 @@ export default class JobListPanel extends Mixins(BaseMixin) {
             this.runStatisticsCache = {}
 
             console.log('✅ Job data loaded:', {
+                jobStatus: response.job?.status,
                 gcodes: this.jobGcodes.length,
                 totalRuns: Object.values(newAllJobRuns).reduce((sum, runs) => sum + runs.length, 0)
             })
+
+            // 🔥 ALSO: Update the specific job in the store for consistency
+            if (response.job) {
+                this.$store.commit('fleet/jobs/updateJob', response.job)
+                console.log('✅ Updated job in store:', response.job.id, response.job.status)
+            }
 
         } catch (error) {
             console.error('❌ Failed to load complete job data:', error)
