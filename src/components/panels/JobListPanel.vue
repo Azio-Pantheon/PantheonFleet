@@ -658,7 +658,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         return [
             { text: 'Any Printer', value: 'any' },
             { text: 'HS-3', value: 'HS-3' },
-            { text: 'HS-Pro Only', value: 'HS-Pro' },
+            { text: 'HS-Pro', value: 'HS-Pro' },
         ]
     }
 

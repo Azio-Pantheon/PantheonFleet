@@ -106,6 +106,24 @@
                             </v-menu>
                         </template>
 
+                        <template v-slot:item.progress="{ item }">
+                            <div v-if="item.status === 'in_progress'" class="progress-container">
+                                <v-progress-linear :value="getPrinterProgress(item.printer_hostname)"
+                                                   height="20"
+                                                   color="blue"
+                                                   background-color="grey lighten-2"
+                                                   striped
+                                                   :title="`${Math.round(getPrinterProgress(item.printer_hostname))}% - ${getPrinterProgressMessage(item.printer_hostname)}`">
+                                    <template v-slot:default="{ value }">
+                                        <small class="progress-text">{{ Math.round(value) }}%</small>
+                                    </template>
+                                </v-progress-linear>
+                            </div>
+                            <div v-else class="text-center text--secondary">
+                                <span class="text-caption">--</span>
+                            </div>
+                        </template>
+
                         <template v-slot:item.qc="{ item }">
                             <v-menu offset-y>
                                 <template #activator="{ on, attrs }">
@@ -353,12 +371,6 @@
                                           dense />
                             </v-col>
                             <v-col cols="12">
-                                <v-text-field v-model="createRunDialog.form.moonraker_job_id"
-                                              label="Moonraker Job ID (Optional)"
-                                              outlined
-                                              dense />
-                            </v-col>
-                            <v-col cols="12">
                                 <v-textarea v-model="createRunDialog.form.notes"
                                             label="Notes (Optional)"
                                             outlined
@@ -384,522 +396,578 @@
 </template>
 
 <script lang="ts">
-import { Component, Mixins, Prop, Watch } from 'vue-property-decorator'
-import BaseMixin from '@/components/mixins/base'
-import Panel from '@/components/ui/Panel.vue'
+    import { Component, Mixins, Prop, Watch } from 'vue-property-decorator'
+    import BaseMixin from '@/components/mixins/base'
+    import Panel from '@/components/ui/Panel.vue'
 
-import {
-    mdiPlay,
-    mdiCloseThick,
-    mdiPlus,
-    mdiRefresh,
-    mdiPencil,
-    mdiDelete,
-    mdiChevronDown,
-    mdiProgressClock,
-    mdiCheck,
-    mdiAlertOutline,
-    mdiCancel,
-    mdiCheckboxMarkedCircleOutline,
-    mdiCloseCircleOutline,
-    mdiHelpCircleOutline,
-} from '@mdi/js'
+    import {
+        mdiPlay,
+        mdiCloseThick,
+        mdiPlus,
+        mdiRefresh,
+        mdiPencil,
+        mdiDelete,
+        mdiChevronDown,
+        mdiProgressClock,
+        mdiCheck,
+        mdiAlertOutline,
+        mdiCancel,
+        mdiCheckboxMarkedCircleOutline,
+        mdiCloseCircleOutline,
+        mdiHelpCircleOutline,
+    } from '@mdi/js'
 
-interface FleetJobGcode {
-    id: string
-    job_id: string
-    gcode_filename: string
-    required_runs: number
-    preferred_printer: string
-    filament_type: string
-    created_at: string
-}
+    interface FleetJobGcode {
+        id: string
+        job_id: string
+        gcode_filename: string
+        required_runs: number
+        preferred_printer: string
+        filament_type: string
+        created_at: string
+    }
 
-interface FleetJobGcodeRun {
-    id: string
-    job_gcode_id: string
-    printer_hostname: string
-    started_at: string
-    completed_at?: string
-    status: string
-    moonraker_job_id?: string
-    notes?: string
-    qc?: string | null
-}
+    interface FleetJobGcodeRun {
+        id: string
+        job_gcode_id: string
+        printer_hostname: string
+        started_at: string
+        completed_at?: string
+        status: string
+        moonraker_job_id?: string
+        notes?: string
+        qc?: string | null
+    }
 
-@Component({
-    components: { Panel },
-})
-export default class PrintRunsDialog extends Mixins(BaseMixin) {
-    mdiPlay = mdiPlay
-    mdiCloseThick = mdiCloseThick
-    mdiPlus = mdiPlus
-    mdiRefresh = mdiRefresh
-    mdiPencil = mdiPencil
-    mdiDelete = mdiDelete
-    mdiChevronDown = mdiChevronDown
-    mdiProgressClock = mdiProgressClock
-    mdiCheck = mdiCheck
-    mdiAlertOutline = mdiAlertOutline
-    mdiCancel = mdiCancel
-    mdiCheckboxMarkedCircleOutline = mdiCheckboxMarkedCircleOutline
-    mdiCloseCircleOutline = mdiCloseCircleOutline
-    mdiHelpCircleOutline = mdiHelpCircleOutline
+    @Component({
+        components: { Panel },
+    })
+    export default class PrintRunsDialog extends Mixins(BaseMixin) {
+        mdiPlay = mdiPlay
+        mdiCloseThick = mdiCloseThick
+        mdiPlus = mdiPlus
+        mdiRefresh = mdiRefresh
+        mdiPencil = mdiPencil
+        mdiDelete = mdiDelete
+        mdiChevronDown = mdiChevronDown
+        mdiProgressClock = mdiProgressClock
+        mdiCheck = mdiCheck
+        mdiAlertOutline = mdiAlertOutline
+        mdiCancel = mdiCancel
+        mdiCheckboxMarkedCircleOutline = mdiCheckboxMarkedCircleOutline
+        mdiCloseCircleOutline = mdiCloseCircleOutline
+        mdiHelpCircleOutline = mdiHelpCircleOutline
 
-    @Prop({ type: Boolean, default: false })
-    readonly value!: boolean
+        @Prop({ type: Boolean, default: false })
+        readonly value!: boolean
 
-    @Prop({ type: Object, default: null })
-    readonly gcodeFile!: FleetJobGcode | null
+        @Prop({ type: Object, default: null })
+        readonly gcodeFile!: FleetJobGcode | null
 
-    @Prop({ type: Array, default: () => [] })
-    readonly runs!: FleetJobGcodeRun[]
+        @Prop({ type: Array, default: () => [] })
+        readonly runs!: FleetJobGcodeRun[]
 
-    @Prop({ type: Boolean, default: false })
-    readonly loading!: boolean
+        @Prop({ type: Boolean, default: false })
+        readonly loading!: boolean
 
-    private createRunDialog = {
-        show: false,
-        isEdit: false,
-        valid: false,
-        loading: false,
-        form: {
-            id: '',
-            printer_hostname: '',
-            status: 'in_progress',
-            moonraker_job_id: '',
-            notes: '',
-            qc: null as string | null,
+        private createRunDialog = {
+            show: false,
+            isEdit: false,
+            valid: false,
+            loading: false,
+            form: {
+                id: '',
+                printer_hostname: '',
+                status: 'in_progress',
+                notes: '',
+                qc: null as string | null,
+            }
         }
-    }
 
-    get dialogVisible() {
-        return this.value
-    }
+        get dialogVisible() {
+            return this.value
+        }
 
-    set dialogVisible(val: boolean) {
-        this.$emit('input', val)
-    }
+        set dialogVisible(val: boolean) {
+            this.$emit('input', val)
+        }
 
-    get runsTableHeaders() {
-        return [
-            { text: 'Printer', value: 'printer_hostname', align: 'left' },
-            { text: 'Status', value: 'status', align: 'center', sortable: false },
-            { text: 'QC', value: 'qc', align: 'center', sortable: false },
-            { text: 'Started', value: 'started_at', align: 'left' },
-            { text: 'Completed', value: 'completed_at', align: 'left' },
-            { text: 'Moonraker ID', value: 'moonraker_job_id', align: 'left' },
-            { text: 'Notes', value: 'notes', align: 'left' },
-            { text: 'Actions', value: 'actions', align: 'center', sortable: false },
-        ]
-    }
+        get runsTableHeaders() {
+            return [
+                { text: 'Printer', value: 'printer_hostname', align: 'left' },
+                { text: 'Status', value: 'status', align: 'center', sortable: false },
+                { text: 'Progress', value: 'progress', align: 'center', sortable: false, width: '120px' },
+                { text: 'QC', value: 'qc', align: 'center', sortable: false },
+                { text: 'Started', value: 'started_at', align: 'left' },
+                { text: 'Completed', value: 'completed_at', align: 'left' },
+                { text: 'Notes', value: 'notes', align: 'left' },
+                { text: 'Actions', value: 'actions', align: 'center', sortable: false },
+            ]
+        }
 
-    get runStatusOptions() {
-        return [
-            { text: 'In Progress', value: 'in_progress' },
-            { text: 'Success', value: 'success' },
-            { text: 'Failed', value: 'fail' },
-            { text: 'Cancelled', value: 'cancelled' },
-        ]
-    }
+        get runStatusOptions() {
+            return [
+                { text: 'In Progress', value: 'in_progress' },
+                { text: 'Success', value: 'success' },
+                { text: 'Failed', value: 'fail' },
+                { text: 'Cancelled', value: 'cancelled' },
+            ]
+        }
 
-    get qcOptions() {
-        return [
-            { text: 'Not Set', value: null },
-            { text: 'Pass', value: 'pass' },
-            { text: 'Fail', value: 'fail' },
-        ]
-    }
+        get qcOptions() {
+            return [
+                { text: 'Not Set', value: null },
+                { text: 'Pass', value: 'pass' },
+                { text: 'Fail', value: 'fail' },
+            ]
+        }
 
-    get fleetDaemonPrinters() {
-        return this.$store.state.farm.fleetDaemonPrinters || {}
-    }
+        get fleetDaemonPrinters() {
+            return this.$store.state.farm.fleetDaemonPrinters || {}
+        }
 
-    get sortedPrinterOptions() {
-        const printers = Object.values(this.fleetDaemonPrinters)
-        const requiredPrinterModel = this.gcodeFile?.preferred_printer
-        const requiredFilament = this.gcodeFile?.filament_type
-    
-        // Filter printers by model compatibility first
-        const compatiblePrinters = printers.filter((printer: any) => {
-            const hostname = printer.socket?.hostname || ''
-            const printerModel = this.getPrinterModel(hostname)
-        
-            // If GCode specifies 'any', all printers are compatible
-            if (requiredPrinterModel === 'any') {
+        get sortedPrinterOptions() {
+            const printers = Object.values(this.fleetDaemonPrinters)
+            const requiredPrinterModel = this.gcodeFile?.preferred_printer
+            const requiredFilament = this.gcodeFile?.filament_type
+
+            // Filter printers by model compatibility first
+            const compatiblePrinters = printers.filter((printer: any) => {
+                const hostname = printer.socket?.hostname || ''
+                const printerModel = this.getPrinterModel(hostname)
+
+                // If GCode specifies 'any', all printers are compatible
+                if (requiredPrinterModel === 'any') {
+                    return true
+                }
+
+                // If GCode specifies a specific model, only show matching printers
+                if (requiredPrinterModel === 'HS-Pro') {
+                    return printerModel === 'HS-Pro'
+                }
+
+                if (requiredPrinterModel === 'HS-3') {
+                    return printerModel === 'HS-3'
+                }
+
+                // Default: show all if we can't determine requirements
                 return true
-            }
-        
-            // If GCode specifies a specific model, only show matching printers
-            if (requiredPrinterModel === 'HS-Pro') {
-                return printerModel === 'HS-Pro'
-            }
-        
-            if (requiredPrinterModel === 'HS-3') {
-                return printerModel === 'HS-3'
-            }
-        
-            // Default: show all if we can't determine requirements
-            return true
-        })
-    
-        // Sort compatible printers by status priority
-        const sortedPrinters = compatiblePrinters.sort((a: any, b: any) => {
-            const statusA = this.getPrinterStatusPriority(a)
-            const statusB = this.getPrinterStatusPriority(b)
-        
-            // First sort by status priority, then by hostname alphabetically
-            if (statusA !== statusB) {
-                return statusA - statusB
-            }
-            return (a.socket?.hostname || '').localeCompare(b.socket?.hostname || '')
-        })
-    
-        return sortedPrinters.map((printer: any) => {
-            const hostname = printer.socket?.hostname || 'Unknown'
-            const status = this.getPrinterDisplayStatus(printer)
-            const isConnected = printer.socket?.isConnected && printer.fleet_to_printer_ws !== false
-            const printerFilament = printer.toolhead?.filament_type
-            const hasFilamentMismatch = requiredFilament && printerFilament && 
-                                       requiredFilament.toLowerCase() !== printerFilament.toLowerCase()
-        
-            return {
-                text: `${hostname} - ${status}`,
-                value: hostname,
-                disabled: !isConnected || this.isPrinterBusy(printer),
-                printer: printer,
-                hasFilamentMismatch: hasFilamentMismatch,
-                requiredFilament: requiredFilament,
-                printerFilament: printerFilament
-            }
-        })
-    }
+            })
 
-    closeDialog() {
-        this.$emit('input', false)
-    }
+            // Sort compatible printers by status priority
+            const sortedPrinters = compatiblePrinters.sort((a: any, b: any) => {
+                const statusA = this.getPrinterStatusPriority(a)
+                const statusB = this.getPrinterStatusPriority(b)
 
-    refreshRuns() {
-        this.$emit('refresh')
-    }
+                // First sort by status priority, then by hostname alphabetically
+                if (statusA !== statusB) {
+                    return statusA - statusB
+                }
+                return (a.socket?.hostname || '').localeCompare(b.socket?.hostname || '')
+            })
 
-    openCreateRunDialog() {
-        this.$toast.error('This is for debugging. Runs should be auto generated')
-        /*
-        this.createRunDialog.isEdit = false
-        this.createRunDialog.show = true
-    
-        // Auto-select the first available printer if any
-        const availablePrinters = this.sortedPrinterOptions.filter(p => !p.disabled)
-        if (availablePrinters.length > 0) {
-            this.createRunDialog.form.printer_hostname = availablePrinters[0].value
+            return sortedPrinters.map((printer: any) => {
+                const hostname = printer.socket?.hostname || 'Unknown'
+                const status = this.getPrinterDisplayStatus(printer)
+                const isConnected = printer.socket?.isConnected && printer.fleet_to_printer_ws !== false
+                const printerFilament = printer.toolhead?.filament_type
+                const hasFilamentMismatch = requiredFilament && printerFilament &&
+                    requiredFilament.toLowerCase() !== printerFilament.toLowerCase()
+
+                return {
+                    text: `${hostname} - ${status}`,
+                    value: hostname,
+                    disabled: !isConnected || this.isPrinterBusy(printer),
+                    printer: printer,
+                    hasFilamentMismatch: hasFilamentMismatch,
+                    requiredFilament: requiredFilament,
+                    printerFilament: printerFilament
+                }
+            })
         }
-        */
-    }
 
-    editRun(run: FleetJobGcodeRun) {
-        this.createRunDialog.isEdit = true
-        this.createRunDialog.form = {
-            id: run.id,
-            printer_hostname: run.printer_hostname,
-            status: run.status,
-            moonraker_job_id: run.moonraker_job_id || '',
-            notes: run.notes || '',
-            qc: run.qc,
+        closeDialog() {
+            this.$emit('input', false)
         }
-        this.createRunDialog.show = true
-    }
 
-    async saveRun() {
-        if (!this.createRunDialog.valid || !this.gcodeFile) return
-        this.createRunDialog.loading = true
+        refreshRuns() {
+            this.$emit('refresh')
+        }
 
-        try {
-            if (this.createRunDialog.isEdit) {
-                const { id, ...updateData } = this.createRunDialog.form
-                this.$emit('update-run', { runId: id, updateData })
-            } else {
-                const { id, status, qc, ...createData } = this.createRunDialog.form
-                this.$emit('create-run', createData)
+        openCreateRunDialog() {
+            this.$toast.error('This is for debugging. Runs should be auto generated')
+            /*
+            this.createRunDialog.isEdit = false
+            this.createRunDialog.show = true
+
+            // Auto-select the first available printer if any
+            const availablePrinters = this.sortedPrinterOptions.filter(p => !p.disabled)
+            if (availablePrinters.length > 0) {
+                this.createRunDialog.form.printer_hostname = availablePrinters[0].value
+            }
+            */
+        }
+
+        editRun(run: FleetJobGcodeRun) {
+            this.createRunDialog.isEdit = true
+            this.createRunDialog.form = {
+                id: run.id,
+                printer_hostname: run.printer_hostname,
+                status: run.status,
+                notes: run.notes || '',
+                qc: run.qc,
+            }
+            this.createRunDialog.show = true
+        }
+
+        async saveRun() {
+            if (!this.createRunDialog.valid || !this.gcodeFile) return
+            this.createRunDialog.loading = true
+
+            try {
+                if (this.createRunDialog.isEdit) {
+                    const { id, ...updateData } = this.createRunDialog.form
+                    this.$emit('update-run', { runId: id, updateData })
+                } else {
+                    const { id, status, qc, ...createData } = this.createRunDialog.form
+                    this.$emit('create-run', createData)
+                }
+
+                this.closeCreateRunDialog()
+
+            } catch (error: unknown) {
+                console.error('Failed to save run:', error)
+                this.$toast.error(`Failed to ${this.createRunDialog.isEdit ? 'update' : 'add'} print run`)
+            } finally {
+                this.createRunDialog.loading = false
+            }
+        }
+
+        closeCreateRunDialog() {
+            this.createRunDialog.show = false
+            this.createRunDialog.isEdit = false
+            this.createRunDialog.form = {
+                id: '',
+                printer_hostname: '',
+                status: 'in_progress',
+                notes: '',
+                qc: null,
+            }
+        }
+
+        async updateRunStatus(run: FleetJobGcodeRun, status: string) {
+            this.$emit('update-run-status', { run, status })
+        }
+
+        async updateRunQC(run: FleetJobGcodeRun, qc: string | null) {
+            this.$emit('update-run-qc', { run, qc })
+        }
+
+        async deleteRun(run: FleetJobGcodeRun) {
+            if (!confirm(`Are you sure you want to delete this print run from ${run.printer_hostname}?`)) {
+                return
+            }
+            this.$emit('delete-run', run)
+        }
+
+        // Status/QC display methods
+        getRunStatusColor(status: string) {
+            const colors = {
+                in_progress: 'blue',
+                success: 'green',
+                fail: 'red',
+                cancelled: 'grey',
+            } as const
+            return colors[status as keyof typeof colors] || 'grey'
+        }
+
+        getRunStatusTextColor(status: string) {
+            return 'white'
+        }
+
+        getRunStatusIcon(status: string) {
+            switch (status) {
+                case 'in_progress':
+                    return this.mdiProgressClock
+                case 'success':
+                    return this.mdiCheck
+                case 'fail':
+                    return this.mdiAlertOutline
+                case 'cancelled':
+                    return this.mdiCancel
+                default:
+                    return this.mdiHelpCircleOutline
+            }
+        }
+
+        getQCColor(qc: string | null) {
+            switch (qc) {
+                case 'pass':
+                    return 'green'
+                case 'fail':
+                    return 'red'
+                default:
+                    return 'grey'
+            }
+        }
+
+        getQCTextColor(qc: string | null) {
+            return 'white'
+        }
+
+        getQCIcon(qc: string | null) {
+            switch (qc) {
+                case 'pass':
+                    return this.mdiCheckboxMarkedCircleOutline
+                case 'fail':
+                    return this.mdiCloseCircleOutline
+                default:
+                    return this.mdiHelpCircleOutline
+            }
+        }
+
+        getQCDisplay(qc: string | null) {
+            switch (qc) {
+                case 'pass':
+                    return 'Pass'
+                case 'fail':
+                    return 'Fail'
+                default:
+                    return 'Not Set'
+            }
+        }
+
+        // Printer helper methods
+        getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
+            const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
+            for (const printer of Object.values(remotePrinters)) {
+                if ((printer as any).hostname === hostname) {
+                    return (printer as any).printerModel ?? null
+                }
+            }
+            return null
+        }
+
+        getPrinterStatusPriority(printer: any): number {
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+            const isConnected = printer.socket?.isConnected
+            const state = printer.print_stats?.state
+
+            if (fleetDisconnected || !isConnected) {
+                return 4 // Disconnected
             }
 
-            this.closeCreateRunDialog()
+            if (printer.webhooks?.state === 'shutdown') {
+                return 5 // Error state
+            }
 
-        } catch (error: unknown) {
-            console.error('Failed to save run:', error)
-            this.$toast.error(`Failed to ${this.createRunDialog.isEdit ? 'update' : 'add'} print run`)
-        } finally {
-            this.createRunDialog.loading = false
+            switch (state) {
+                case 'standby':
+                case 'ready':
+                    return 1 // Best - ready to print
+                case 'complete':
+                    return 2 // Good - just finished
+                case 'printing':
+                    return 3 // Busy - currently printing
+                case 'paused':
+                case 'error':
+                case 'cancelled':
+                    return 5 // Problems
+                default:
+                    return 4 // Unknown state
+            }
         }
-    }
 
-    closeCreateRunDialog() {
-        this.createRunDialog.show = false
-        this.createRunDialog.isEdit = false
-        this.createRunDialog.form = {
-            id: '',
-            printer_hostname: '',
-            status: 'in_progress',
-            moonraker_job_id: '',
-            notes: '',
-            qc: null,
+        getPrinterDisplayStatus(printer: any): string {
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+            const isConnected = printer.socket?.isConnected
+            const state = printer.print_stats?.state
+
+            if (fleetDisconnected || !isConnected) {
+                return 'Disconnected'
+            }
+
+            if (printer.webhooks?.state === 'shutdown') {
+                return 'Shutdown'
+            }
+
+            switch (state) {
+                case 'standby':
+                    return 'Ready'
+                case 'ready':
+                    return 'Ready'
+                case 'printing':
+                    return 'Printing'
+                case 'complete':
+                    return 'Complete'
+                case 'paused':
+                    return 'Paused'
+                case 'error':
+                    return 'Error'
+                case 'cancelled':
+                    return 'Cancelled'
+                default:
+                    return state || 'Unknown'
+            }
         }
-    }
 
-    async updateRunStatus(run: FleetJobGcodeRun, status: string) {
-        this.$emit('update-run-status', { run, status })
-    }
-
-    async updateRunQC(run: FleetJobGcodeRun, qc: string | null) {
-        this.$emit('update-run-qc', { run, qc })
-    }
-
-    async deleteRun(run: FleetJobGcodeRun) {
-        if (!confirm(`Are you sure you want to delete this print run from ${run.printer_hostname}?`)) {
-            return
+        isPrinterBusy(printer: any): boolean {
+            const state = printer.print_stats?.state
+            return state === 'printing'
         }
-        this.$emit('delete-run', run)
-    }
 
-    // Status/QC display methods
-    getRunStatusColor(status: string) {
-        const colors = {
-            in_progress: 'blue',
-            success: 'green',
-            fail: 'red',
-            cancelled: 'grey',
-        } as const
-        return colors[status as keyof typeof colors] || 'grey'
-    }
+        getPrinterChipColor(printer: any): string {
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+            const isConnected = printer.socket?.isConnected
+            const state = printer.print_stats?.state
 
-    getRunStatusTextColor(status: string) {
-        return 'white'
-    }
-
-    getRunStatusIcon(status: string) {
-        switch (status) {
-            case 'in_progress':
-                return this.mdiProgressClock
-            case 'success':
-                return this.mdiCheck
-            case 'fail':
-                return this.mdiAlertOutline
-            case 'cancelled':
-                return this.mdiCancel
-            default:
-                return this.mdiHelpCircleOutline
-        }
-    }
-
-    getQCColor(qc: string | null) {
-        switch (qc) {
-            case 'pass':
-                return 'green'
-            case 'fail':
-                return 'red'
-            default:
+            if (fleetDisconnected || !isConnected) {
                 return 'grey'
-        }
-    }
+            }
 
-    getQCTextColor(qc: string | null) {
-        return 'white'
-    }
+            if (printer.webhooks?.state === 'shutdown') {
+                return 'red'
+            }
 
-    getQCIcon(qc: string | null) {
-        switch (qc) {
-            case 'pass':
-                return this.mdiCheckboxMarkedCircleOutline
-            case 'fail':
-                return this.mdiCloseCircleOutline
-            default:
-                return this.mdiHelpCircleOutline
-        }
-    }
-
-    getQCDisplay(qc: string | null) {
-        switch (qc) {
-            case 'pass':
-                return 'Pass'
-            case 'fail':
-                return 'Fail'
-            default:
-                return 'Not Set'
-        }
-    }
-
-    // Printer helper methods
-    getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
-        const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
-        for (const printer of Object.values(remotePrinters)) {
-            if ((printer as any).hostname === hostname) {
-                return (printer as any).printerModel ?? null
+            switch (state) {
+                case 'standby':
+                case 'ready':
+                    return 'green'
+                case 'printing':
+                    return 'blue'
+                case 'complete':
+                    return 'teal'
+                case 'paused':
+                    return 'orange'
+                case 'error':
+                case 'cancelled':
+                    return 'red'
+                default:
+                    return 'grey'
             }
         }
-        return null
-    }
 
-    getPrinterStatusPriority(printer: any): number {
-        const fleetDisconnected = printer.fleet_to_printer_ws === false
-        const isConnected = printer.socket?.isConnected
-        const state = printer.print_stats?.state
-    
-        if (fleetDisconnected || !isConnected) {
-            return 4 // Disconnected
+        getPrinterChipTextColor(printer: any): string {
+            return 'white'
         }
-    
-        if (printer.webhooks?.state === 'shutdown') {
-            return 5 // Error state
-        }
-    
-        switch (state) {
-            case 'standby':
-            case 'ready':
-                return 1 // Best - ready to print
-            case 'complete':
-                return 2 // Good - just finished
-            case 'printing':
-                return 3 // Busy - currently printing
-            case 'paused':
-            case 'error':
-            case 'cancelled':
-                return 5 // Problems
-            default:
-                return 4 // Unknown state
-        }
-    }
 
-    getPrinterDisplayStatus(printer: any): string {
-        const fleetDisconnected = printer.fleet_to_printer_ws === false
-        const isConnected = printer.socket?.isConnected
-        const state = printer.print_stats?.state
-    
-        if (fleetDisconnected || !isConnected) {
-            return 'Disconnected'
-        }
-    
-        if (printer.webhooks?.state === 'shutdown') {
-            return 'Shutdown'
-        }
-    
-        switch (state) {
-            case 'standby':
-                return 'Ready'
-            case 'ready':
-                return 'Ready'
-            case 'printing':
-                return 'Printing'
-            case 'complete':
-                return 'Complete'
-            case 'paused':
-                return 'Paused'
-            case 'error':
-                return 'Error'
-            case 'cancelled':
-                return 'Cancelled'
-            default:
-                return state || 'Unknown'
-        }
-    }
+        getPrinterSelectionHint(): string {
+            const gcodeFile = this.gcodeFile
+            if (!gcodeFile) {
+                return 'Choose an available printer'
+            }
 
-    isPrinterBusy(printer: any): boolean {
-        const state = printer.print_stats?.state
-        return state === 'printing'
-    }
+            const hints = []
 
-    getPrinterChipColor(printer: any): string {
-        const fleetDisconnected = printer.fleet_to_printer_ws === false
-        const isConnected = printer.socket?.isConnected
-        const state = printer.print_stats?.state
-    
-        if (fleetDisconnected || !isConnected) {
-            return 'grey'
-        }
-    
-        if (printer.webhooks?.state === 'shutdown') {
-            return 'red'
-        }
-    
-        switch (state) {
-            case 'standby':
-            case 'ready':
-                return 'green'
-            case 'printing':
-                return 'blue'
-            case 'complete':
-                return 'teal'
-            case 'paused':
-                return 'orange'
-            case 'error':
-            case 'cancelled':
-                return 'red'
-            default:
-                return 'grey'
-        }
-    }
+            // Model requirement
+            if (gcodeFile.preferred_printer && gcodeFile.preferred_printer !== 'any') {
+                hints.push(`${gcodeFile.preferred_printer} printers only`)
+            }
 
-    getPrinterChipTextColor(printer: any): string {
-        return 'white'
-    }
+            // Available count
+            const availableCount = this.sortedPrinterOptions.filter(p => !p.disabled).length
+            hints.push(`${availableCount} available`)
 
-    getPrinterSelectionHint(): string {
-        const gcodeFile = this.gcodeFile
-        if (!gcodeFile) {
-            return 'Choose an available printer'
-        }
-    
-        const hints = []
-    
-        // Model requirement
-        if (gcodeFile.preferred_printer && gcodeFile.preferred_printer !== 'any') {
-            hints.push(`${gcodeFile.preferred_printer} printers only`)
-        }
-    
-        // Available count
-        const availableCount = this.sortedPrinterOptions.filter(p => !p.disabled).length
-        hints.push(`${availableCount} available`)
-    
-        // Filament info
-        if (gcodeFile.filament_type) {
-            hints.push(`requires ${gcodeFile.filament_type}`)
-        }
-    
-        return hints.join(' • ')
-    }
+            // Filament info
+            if (gcodeFile.filament_type) {
+                hints.push(`requires ${gcodeFile.filament_type}`)
+            }
 
-    getSelectedPrinterMismatch(): boolean {
-        const selectedHostname = this.createRunDialog.form.printer_hostname
-        if (!selectedHostname || !this.gcodeFile?.filament_type) {
-            return false
+            return hints.join(' • ')
         }
-    
-        const selectedOption = this.sortedPrinterOptions.find(p => p.value === selectedHostname)
-        return selectedOption?.hasFilamentMismatch || false
-    }
 
-    getSelectedPrinterFilament(): string {
-        const selectedHostname = this.createRunDialog.form.printer_hostname
-        if (!selectedHostname) {
-            return 'Unknown'
+        getSelectedPrinterMismatch(): boolean {
+            const selectedHostname = this.createRunDialog.form.printer_hostname
+            if (!selectedHostname || !this.gcodeFile?.filament_type) {
+                return false
+            }
+
+            const selectedOption = this.sortedPrinterOptions.find(p => p.value === selectedHostname)
+            return selectedOption?.hasFilamentMismatch || false
         }
-    
-        const selectedOption = this.sortedPrinterOptions.find(p => p.value === selectedHostname)
-        return selectedOption?.printerFilament || 'None detected'
-    }
 
-    formatDateTime(dateString: string) {
-        if (!dateString) return null
-        return new Date(dateString).toLocaleString()
+        getSelectedPrinterFilament(): string {
+            const selectedHostname = this.createRunDialog.form.printer_hostname
+            if (!selectedHostname) {
+                return 'Unknown'
+            }
+
+            const selectedOption = this.sortedPrinterOptions.find(p => p.value === selectedHostname)
+            return selectedOption?.printerFilament || 'None detected'
+        }
+
+        formatDateTime(dateString: string) {
+            if (!dateString) return null
+            return new Date(dateString).toLocaleString()
+        }
+
+        // Progress-related methods
+        getPrinterProgress(hostname: string): number {
+            const printer = this.fleetDaemonPrinters[hostname]
+            if (!printer?.display_status?.progress) {
+                return 0
+            }
+
+            // Convert from 0-1 decimal to 0-100 percentage
+            return printer.display_status.progress * 100
+        }
+
+        getPrinterProgressMessage(hostname: string): string {
+            const printer = this.fleetDaemonPrinters[hostname]
+            if (!printer) {
+                return 'Unknown'
+            }
+
+            // Try display_status message first, then print_stats state
+            const displayMessage = printer.display_status?.message
+            if (displayMessage && displayMessage.trim() !== '') {
+                return displayMessage
+            }
+
+            const printState = printer.print_stats?.state
+            if (printState) {
+                // Capitalize first letter and replace underscores
+                return printState.charAt(0).toUpperCase() + printState.slice(1).replace('_', ' ')
+            }
+
+            return 'In Progress'
+        }
     }
-}
 </script>
 
 <style scoped>
-.gcode-runs-table th {
-    white-space: nowrap;
-}
+    .gcode-runs-table th {
+        white-space: nowrap;
+    }
 
-.gcode-runs-table th.text-start {
-    padding-right: 0 !important;
-}
+        .gcode-runs-table th.text-start {
+            padding-right: 0 !important;
+        }
+
+    /* Progress bar styling */
+    .progress-container {
+        min-width: 100px;
+    }
+
+    .progress-text {
+        color: white;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+    }
+
+    /* Progress bar striped animation */
+    ::v-deep .v-progress-linear__striped {
+        background-size: 40px 40px;
+        animation: progress-stripes 1s linear infinite;
+    }
+
+    @keyframes progress-stripes {
+        0% {
+            background-position: 0 0;
+        }
+
+        100% {
+            background-position: 40px 0;
+        }
+    }
 </style>
