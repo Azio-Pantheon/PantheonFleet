@@ -704,7 +704,7 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
         if (filenameLower.includes('hs-pro') || filenameLower.includes('hspro')) {
             preferred_printer = 'HS-Pro'
         } else if (filenameLower.includes('hs3') || filenameLower.includes('hs-3')) {
-            preferred_printer = 'HS3'
+            preferred_printer = 'HS-3'
         }
 
         // Determine filament type

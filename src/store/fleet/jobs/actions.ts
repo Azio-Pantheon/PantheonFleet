@@ -351,58 +351,57 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
     },
 
     // Helper action for printer compatibility checking
-    checkPrinterCompatibility({ }, { gcode, rootState }: { gcode: FleetJobGcode, rootState: any }): FleetCompatibilityCheck {
+    checkPrinterCompatibility(
+        { }: any,
+        { gcode, rootState }: { gcode: FleetJobGcode; rootState: any }
+    ): FleetCompatibilityCheck {
         const remotePrinters = rootState.gui?.remoteprinters?.printers || {}
         const fleetPrinters = rootState.farm?.fleetDaemonPrinters || {}
 
         const compatible: FleetPrinterInfo[] = []
         const incompatible: FleetPrinterInfo[] = []
 
-        // Helper function to get printer model
-        const getPrinterModel = (hostname: string): 'HS3' | 'HS-Pro' | null => {
-            for (const printer of Object.values(remotePrinters)) {
-                if ((printer as any).hostname === hostname) {
-                    return (printer as any).printerModel ?? null
+        const getPrinterModel = (hostname: string): 'HS-3' | 'HS-Pro' | null => {
+            for (const p of Object.values(remotePrinters)) {
+                if ((p as any).hostname === hostname) {
+                    return (p as any).printerModel ?? null
                 }
             }
             return null
         }
 
-        // Check each remote printer for compatibility
         Object.values(remotePrinters).forEach((printer: any) => {
             const hostname = printer.hostname
             if (!hostname) return
 
-            const printerModel = getPrinterModel(hostname)
             const fleetData = fleetPrinters[hostname]
             const currentFilament = fleetData?.toolhead?.filament_type
             const printerState = fleetData?.print_stats?.state || 'unknown'
-
-            // NEW: Check fleet connection status
             const isFleetConnected = fleetData?.fleet_to_printer_ws === true
+            const printerModel = getPrinterModel(hostname)
 
-            const printerInfo: FleetPrinterInfo = {
-                hostname,
-                printerModel,
-                filament_type: currentFilament,
-                status: printerState,
-                state: printerState
-            }
-
-            // Check printer model compatibility (if gcode has preferred printer)
-            const modelCompatible = !gcode.preferred_printer ||
+            // Evaluate each compatibility criterion
+            const modelCompatible =
+                !gcode.preferred_printer ||
                 gcode.preferred_printer === 'any' ||
                 printerModel === gcode.preferred_printer
 
-            // Check filament compatibility (allow N/A, null, empty, or exact match)
-            const filamentCompatible = !gcode.filament_type ||
+            const filamentCompatible =
+                !gcode.filament_type ||
                 gcode.filament_type === 'any' ||
                 !currentFilament ||
                 currentFilament === 'N/A' ||
                 currentFilament === '' ||
                 currentFilament === gcode.filament_type
 
-            // Printer is compatible if model, filament, AND fleet connection are all good
+            const printerInfo: FleetPrinterInfo = {
+                hostname,
+                printerModel,
+                filament_type: currentFilament,
+                status: printerState,
+                state: printerState,
+            }
+
             if (modelCompatible && filamentCompatible && isFleetConnected) {
                 compatible.push(printerInfo)
             } else {
@@ -414,7 +413,7 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
             gcode,
             compatible_printers: compatible,
             incompatible_printers: incompatible,
-            has_compatible: compatible.length > 0
+            has_compatible: compatible.length > 0,
         }
     }
 }

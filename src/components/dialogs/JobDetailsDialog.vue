@@ -613,7 +613,7 @@
         }
 
         // NEW: Queue-related methods
-        getPrinterModel(hostname: string): 'HS3' | 'HS-Pro' | null {
+        getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
             const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
             for (const printer of Object.values(remotePrinters)) {
                 if ((printer as any).hostname === hostname) {

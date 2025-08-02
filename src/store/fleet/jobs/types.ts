@@ -121,7 +121,7 @@ export interface FleetJobEnqueueAllResponse {
 // Printer compatibility types
 export interface FleetPrinterInfo {
     hostname: string
-    printerModel: 'HS3' | 'HS-Pro' | null
+    printerModel: 'HS-3' | 'HS-Pro' | null
     filament_type?: string | null
     status?: string
     state?: string

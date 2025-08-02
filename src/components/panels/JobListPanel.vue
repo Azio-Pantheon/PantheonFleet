@@ -1042,7 +1042,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     get printerOptions() {
         return [
             { text: 'Any Printer', value: 'any' },
-            { text: 'HS3', value: 'HS3' },
+            { text: 'HS-3', value: 'HS-3' },
             { text: 'HS-Pro Only', value: 'HS-Pro' },
         ]
     }
@@ -1128,8 +1128,8 @@ export default class JobListPanel extends Mixins(BaseMixin) {
                 return printerModel === 'HS-Pro'
             }
         
-            if (requiredPrinterModel === 'HS3') {
-                return printerModel === 'HS3'
+            if (requiredPrinterModel === 'HS-3') {
+                return printerModel === 'HS-3'
             }
         
             // Default: show all if we can't determine requirements
@@ -1168,7 +1168,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         })
     }
 
-    getPrinterModel(hostname: string): 'HS3' | 'HS-Pro' | null {
+    getPrinterModel(hostname: string): 'HS-3' | 'HS-Pro' | null {
         const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
         for (const printer of Object.values(remotePrinters)) {
             if ((printer as any).hostname === hostname) {
@@ -2492,7 +2492,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
                 if (processedFile.required_runs <= 0) {
                     throw new Error(`File ${index + 1}: Invalid required runs`)
                 }
-                if (!['HS-Pro', 'HS3', 'any'].includes(processedFile.preferred_printer)) {
+                if (!['HS-Pro', 'HS-3', 'any'].includes(processedFile.preferred_printer)) {
                     throw new Error(`File ${index + 1}: Invalid printer preference`)
                 }
                 return processedFile
