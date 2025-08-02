@@ -411,7 +411,7 @@
                                         </div>
 
                                         <!-- Queue status display -->
-                                        <div v-if="getQueueStatus(gcode) || hasActiveRuns(gcode)" class="queue-runs-display mt-3 pa-3" style="border: 1px solid #ff9800; border-radius: 8px; background-color: rgba(255, 152, 0, 0.05);">
+                                        <div v-if="(getQueueStatus(gcode) && getQueueStatus(gcode).total_queued > 0) || hasActiveRuns(gcode)" class="queue-runs-display mt-3 pa-3" style="border: 1px solid #ff9800; border-radius: 8px; background-color: rgba(255, 152, 0, 0.05);">
                                             <!-- Queue Status Section -->
                                             <div v-if="getQueueStatus(gcode)" class="queue-status-section mb-3">
                                                 <div class="d-flex align-center mb-2">
