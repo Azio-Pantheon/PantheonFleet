@@ -1413,6 +1413,11 @@
         }
 
         async enqueueGcode(gcode: FleetJobGcode) {
+            // Prevent spam clicking - check if already loading
+            if (this.loadingEnqueueGcode[gcode.id]) {
+                return;
+            }
+
             // Check if already completed
             const runs = this.allJobRuns[gcode.id] || [];
             const passedCount = runs.filter(r => r.qc === 'pass').length;
@@ -1432,7 +1437,8 @@
                 // File is "dirty" - show dialog to ask how many runs to enqueue
                 this.openEnqueueDialog(gcode, false)
             } else {
-                // File is "clean" - proceed with default required runs
+                // File is "clean" - immediately set loading state and proceed
+                this.$set(this.loadingEnqueueGcode, gcode.id, true)
                 await this.performEnqueue(gcode, gcode.required_runs)
             }
         }
@@ -1440,58 +1446,79 @@
         async enqueueAllGcodes() {
             if (!this.job || this.gcodeFiles.length === 0) return
 
-            // Check for completed files
-            const completed = this.gcodeFiles.filter(gcode => {
-                const runs = this.allJobRuns[gcode.id] || [];
-                const passed = runs.filter(r => r.qc === 'pass').length;
-                return passed >= gcode.required_runs;
-            });
-
-            if (completed.length > 0) {
-                const names = completed.map(g => g.gcode_filename).join(', ');
-                this.$toast.warning(
-                    `⚠️ Skipping completed files: ${names}`
-                );
-            }
-
-            // Get non-completed files
-            const activeFiles = this.gcodeFiles.filter(gcode => {
-                const runs = this.allJobRuns[gcode.id] || [];
-                const passed = runs.filter(r => r.qc === 'pass').length;
-                return passed < gcode.required_runs;
-            });
-
-            if (activeFiles.length === 0) {
-                this.$toast.info('All files are already completed');
+            // Prevent spam clicking - check if already loading
+            if (this.loadingEnqueueAll) {
                 return;
             }
 
-            // Separate clean vs dirty files
-            const cleanFiles = []
-            const dirtyFiles = []
+            // Immediately set loading state
+            this.loadingEnqueueAll = true
 
-            activeFiles.forEach(gcode => {
-                const stats = this.getRunStatistics(gcode)
-                const queueStatus = this.getQueueStatus(gcode)
-                const totalQueued = queueStatus?.total_queued || 0
+            try {
+                // Check for completed files
+                const completed = this.gcodeFiles.filter(gcode => {
+                    const runs = this.allJobRuns[gcode.id] || [];
+                    const passed = runs.filter(r => r.qc === 'pass').length;
+                    return passed >= gcode.required_runs;
+                });
 
-                if (stats.totalRuns === 0 && totalQueued === 0) {
-                    cleanFiles.push(gcode)
-                } else {
-                    dirtyFiles.push(gcode)
+                if (completed.length > 0) {
+                    const names = completed.map(g => g.gcode_filename).join(', ');
+                    this.$toast.warning(
+                        `⚠️ Skipping completed files: ${names}`
+                    );
                 }
-            })
 
-            console.log(`📊 Enqueue All Analysis: ${cleanFiles.length} clean, ${dirtyFiles.length} dirty files`)
+                // Get non-completed files
+                const activeFiles = this.gcodeFiles.filter(gcode => {
+                    const runs = this.allJobRuns[gcode.id] || [];
+                    const passed = runs.filter(r => r.qc === 'pass').length;
+                    return passed < gcode.required_runs;
+                });
 
-            // Auto-enqueue clean files
-            if (cleanFiles.length > 0) {
-                await this.performEnqueueCleanFiles(cleanFiles)
-            }
+                if (activeFiles.length === 0) {
+                    this.$toast.info('All files are already completed');
+                    return;
+                }
 
-            // Handle dirty files individually
-            if (dirtyFiles.length > 0) {
-                await this.handleDirtyFilesSequentially(dirtyFiles)
+                // Separate clean vs dirty files
+                const cleanFiles = []
+                const dirtyFiles = []
+
+                activeFiles.forEach(gcode => {
+                    const stats = this.getRunStatistics(gcode)
+                    const queueStatus = this.getQueueStatus(gcode)
+                    const totalQueued = queueStatus?.total_queued || 0
+
+                    if (stats.totalRuns === 0 && totalQueued === 0) {
+                        cleanFiles.push(gcode)
+                    } else {
+                        dirtyFiles.push(gcode)
+                    }
+                })
+
+                console.log(`📊 Enqueue All Analysis: ${cleanFiles.length} clean, ${dirtyFiles.length} dirty files`)
+
+                // Auto-enqueue clean files
+                if (cleanFiles.length > 0) {
+                    await this.performEnqueueCleanFiles(cleanFiles)
+                }
+
+                // Handle dirty files individually
+                if (dirtyFiles.length > 0) {
+                    // Reset loading state since we're opening dialogs
+                    this.loadingEnqueueAll = false
+                    await this.handleDirtyFilesSequentially(dirtyFiles)
+                }
+
+            } catch (error) {
+                console.error('Error in enqueueAllGcodes:', error)
+                this.$toast.error('Failed to enqueue files')
+            } finally {
+                // Only reset if not handling dirty files
+                if (!this.enqueueDialog.isDirtySequence) {
+                    this.loadingEnqueueAll = false
+                }
             }
         }
 
@@ -1765,7 +1792,7 @@
                 case 'fail':
                     return 'Fail'
                 default:
-                    return 'Pending'
+                    return 'Pending QC'
             }
         }
 
