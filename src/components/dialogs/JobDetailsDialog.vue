@@ -1,6 +1,6 @@
 <template>
     <v-dialog v-model="dialogVisible"
-              :max-width="1000"
+              :max-width="1500"
               persistent
               @keydown.esc="closeDialog">
         <panel title="Job Details"
@@ -21,9 +21,9 @@
                 </v-btn>
             </template>
             <v-card-text class="px-0">
-                <overlay-scrollbars style="height: 600px" class="px-6">
+                <overlay-scrollbars style="height: 70vh" class="px-6">
                     <v-row v-if="job">
-                        <v-col cols="6">
+                        <v-col cols="4">
                             <div class="d-flex justify-space-between align-center mb-3">
                                 <h3>Job Information</h3>
                                 <v-btn color="primary"
@@ -175,7 +175,7 @@
                             </v-row>
                         </v-col>
 
-                        <v-col cols="6">
+                        <v-col cols="8">
                             <div class="d-flex justify-space-between align-center mb-3">
                                 <h3>
                                     GCode Files
@@ -420,11 +420,11 @@
                                                         Queue: {{ getQueueStatus(gcode).total_queued }} jobs across {{ Object.keys(getQueueStatus(gcode).queued_per_printer).length }} printers
                                                     </span>
                                                 </div>
-                                                <div class="queue-details">
+                                                <div class="queue-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                                     <div v-for="(count, hostname) in getQueueStatus(gcode).queued_per_printer"
                                                          :key="hostname"
                                                          class="text-caption d-flex justify-space-between align-center py-1"
-                                                         style="border-bottom: 1px solid rgba(255, 152, 0, 0.2);">
+                                                         style="border: 1px solid rgba(255, 152, 0, 0.2); border-radius: 4px; padding: 8px;">
                                                         <div class="d-flex align-center">
                                                             <!-- Printer Status Tag -->
                                                             <v-chip x-small
@@ -456,10 +456,10 @@
                                                         Active Runs ({{ getActiveRuns(gcode).length }})
                                                     </span>
                                                 </div>
-                                                <div class="runs-list">
+                                                <div class="runs-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                                     <div v-for="run in getActiveRuns(gcode)"
                                                          :key="run.id"
-                                                         class="run-item pa-2 mb-2"
+                                                         class="run-item pa-2"
                                                          style="border: 1px solid rgba(25, 118, 210, 0.3); border-radius: 6px; background-color: rgba(25, 118, 210, 0.05);">
 
                                                         <!-- SIMPLIFIED Run Header -->
