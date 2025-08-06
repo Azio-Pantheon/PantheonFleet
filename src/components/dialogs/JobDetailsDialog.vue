@@ -425,11 +425,21 @@
                                                          :key="hostname"
                                                          class="text-caption d-flex justify-space-between align-center py-1"
                                                          style="border-bottom: 1px solid rgba(255, 152, 0, 0.2);">
-                                                        <span class="font-weight-medium clickable-printer"
-                                                              @click="clickPrinter(hostname)"
-                                                              :title="getPrinterClickTooltip(hostname)">
-                                                            {{ hostname }}
-                                                        </span>
+                                                        <div class="d-flex align-center">
+                                                            <!-- Printer Status Tag -->
+                                                            <v-chip x-small
+                                                                    :color="getPrinterStatusColor(hostname)"
+                                                                    :text-color="getPrinterStatusTextColor(hostname)"
+                                                                    class="mr-2"
+                                                                    :title="getPrinterStatusTooltip(hostname)">
+                                                                {{ getPrinterStatusText(hostname) }}
+                                                            </v-chip>
+                                                            <span class="font-weight-medium clickable-printer"
+                                                                  @click="clickPrinter(hostname)"
+                                                                  :title="getPrinterClickTooltip(hostname)">
+                                                                {{ hostname }}
+                                                            </span>
+                                                        </div>
                                                         <v-chip x-small color="orange" text-color="white">{{ count }} queued</v-chip>
                                                     </div>
                                                     <div class="text-caption mt-2 grey--text text-right">
@@ -1804,6 +1814,71 @@
             }
 
             return 'In Progress'
+        }
+
+        getPrinterStatusColor(hostname: string): string {
+            const printer = this.getPrinterByHostname(hostname)
+            if (!printer) return 'grey'
+
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+
+            if (fleetDisconnected || !printer.socket?.isConnected) {
+                return 'grey'
+            }
+
+            if (printer.webhooks?.state === 'shutdown') {
+                return 'red'
+            }
+
+            const state = printer.print_stats?.state
+            if (state === 'printing') {
+                return 'blue'
+            } else if (state === 'error' || state === 'paused' || state === 'cancelled') {
+                return 'red'
+            } else if (state === 'complete') {
+                return 'blue'
+            } else if (state === 'standby') {
+                return 'green'
+            }
+
+            return 'grey'
+        }
+
+        getPrinterStatusTextColor(hostname: string): string {
+            return 'white'
+        }
+
+        getPrinterStatusText(hostname: string): string {
+            const printer = this.getPrinterByHostname(hostname)
+            if (!printer) return 'Unknown'
+
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+            if (fleetDisconnected) return 'Offline'
+            if (!printer.socket?.isConnected) return 'Offline'
+            if (printer.webhooks?.state === 'shutdown') return 'Shutdown'
+
+            const state = printer.print_stats?.state
+            if (state === 'printing') return 'Printing'
+            if (state === 'standby') return 'Ready'
+            if (state === 'complete') return 'Complete'
+            if (state === 'error') return 'Error'
+            if (state === 'paused') return 'Paused'
+            if (state === 'cancelled') return 'Cancelled'
+
+            return state || 'Unknown'
+        }
+
+        getPrinterStatusTooltip(hostname: string): string {
+            const printer = this.getPrinterByHostname(hostname)
+            if (!printer) return 'Printer not found'
+
+            const fleetDisconnected = printer.fleet_to_printer_ws === false
+            if (fleetDisconnected) return 'Fleet connection disconnected'
+            if (!printer.socket?.isConnected) return 'Printer disconnected'
+            if (printer.webhooks?.state === 'shutdown') return 'Printer in shutdown state'
+
+            const state = printer.print_stats?.state || 'unknown'
+            return `Printer status: ${state.charAt(0).toUpperCase() + state.slice(1)}`
         }
 
 
