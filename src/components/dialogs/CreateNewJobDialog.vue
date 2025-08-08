@@ -256,7 +256,7 @@
                                                 {{ gcode.required_runs }} runs
                                             </v-chip>
                                             <v-chip x-small color="green" text-color="white">
-                                                {{ gcode.preferred_printer || 'Any' }}
+                                                {{ gcode.preferred_printer }}
                                             </v-chip>
                                         </div>
                                     </div>

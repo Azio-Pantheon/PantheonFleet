@@ -232,7 +232,7 @@
                                     {{ gcode.required_runs }} runs
                                 </v-chip>
                                 <v-chip x-small color="green" text-color="white">
-                                    {{ gcode.preferred_printer || 'Any' }}
+                                    {{ gcode.preferred_printer }}
                                 </v-chip>
                             </div>
                         </div>
@@ -416,7 +416,7 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
             this.form = {
                 gcode_filename: '',
                 required_runs: 1,
-                preferred_printer: 'any',
+                preferred_printer: '',
                 filament_type: '',
             }
         }
@@ -545,7 +545,7 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
         this.form = {
             gcode_filename: '',
             required_runs: 1,
-            preferred_printer: 'any',
+            preferred_printer: '',
             filament_type: '',
         }
 
@@ -672,7 +672,7 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
             this.form = {
                 gcode_filename: '',
                 required_runs: 1,
-                preferred_printer: 'any',
+                preferred_printer: '',
                 filament_type: '',
             }
 
