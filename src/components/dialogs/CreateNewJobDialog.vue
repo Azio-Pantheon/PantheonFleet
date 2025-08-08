@@ -230,8 +230,10 @@
                                                 <v-select v-model="gcode.preferred_printer"
                                                           :items="printerOptions"
                                                           label="Printer"
+                                                          :rules="[v => !!v || 'Printer preference is required']"
                                                           outlined
                                                           dense
+                                                          required
                                                           hide-details="auto" />
                                             </v-col>
                                             <v-col cols="12">
@@ -402,7 +404,6 @@ export default class CreateNewJobDialog extends Mixins(BaseMixin) {
 
     get printerOptions() {
         return [
-            { text: 'Any Printer', value: 'any' },
             { text: 'HS-3', value: 'HS-3' },
             { text: 'HS-Pro', value: 'HS-Pro' },
         ]
@@ -675,7 +676,7 @@ export default class CreateNewJobDialog extends Mixins(BaseMixin) {
         const filenameLower = filename.toLowerCase()
     
         // Determine printer model
-        let preferred_printer = 'any'
+        let preferred_printer = ''
         if (filenameLower.includes('hs-pro') || filenameLower.includes('hspro')) {
             preferred_printer = 'HS-Pro'
         } else if (filenameLower.includes('hs3') || filenameLower.includes('hs-3')) {

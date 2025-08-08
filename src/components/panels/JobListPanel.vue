@@ -658,7 +658,6 @@ export default class JobListPanel extends Mixins(BaseMixin) {
 
     get printerOptions() {
         return [
-            { text: 'Any Printer', value: 'any' },
             { text: 'HS-3', value: 'HS-3' },
             { text: 'HS-Pro', value: 'HS-Pro' },
         ]
@@ -1768,7 +1767,7 @@ export default class JobListPanel extends Mixins(BaseMixin) {
                 if (processedFile.required_runs <= 0) {
                     throw new Error(`File ${index + 1}: Invalid required runs`)
                 }
-                if (!['HS-Pro', 'HS-3', 'any'].includes(processedFile.preferred_printer)) {
+                if (!['HS-Pro', 'HS-3'].includes(processedFile.preferred_printer)) {
                     throw new Error(`File ${index + 1}: Invalid printer preference`)
                 }
                 return processedFile

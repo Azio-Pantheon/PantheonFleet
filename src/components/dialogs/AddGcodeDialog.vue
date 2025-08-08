@@ -205,8 +205,10 @@
                                         <v-select v-model="gcode.preferred_printer"
                                                   :items="printerOptions"
                                                   label="Printer"
+                                                  :rules="[v => !!v || 'Printer preference is required']"
                                                   outlined
                                                   dense
+                                                  required
                                                   hide-details="auto" />
                                     </v-col>
                                     <v-col cols="12">
@@ -340,7 +342,7 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
     private form = {
         gcode_filename: '',
         required_runs: 1,
-        preferred_printer: 'any',
+        preferred_printer: '',
         filament_type: '',
     }
 
@@ -700,7 +702,7 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
         const filenameLower = filename.toLowerCase()
 
         // Determine printer model
-        let preferred_printer = 'any'
+        let preferred_printer = ''
         if (filenameLower.includes('hs-pro') || filenameLower.includes('hspro')) {
             preferred_printer = 'HS-Pro'
         } else if (filenameLower.includes('hs3') || filenameLower.includes('hs-3')) {
@@ -776,19 +778,16 @@ export default class AddGcodeDialog extends Mixins(BaseMixin) {
             // All batch files are valid, proceed
             this.saveGcode()
         } else {
-            // Single mode validation - force validate form
+            let isValid = true
             if (this.$refs.gcodeForm) {
-                (this.$refs.gcodeForm as any).validate()
+                isValid = (this.$refs.gcodeForm as any).validate()
             }
 
-            // Wait for validation to complete, then check if valid
-            this.$nextTick(() => {
-                if (this.formValid) {
-                    this.saveGcode()
-                } else {
-                    this.$toast.warning('Please fill in all required fields (marked in red)')
-                }
-            })
+            if (isValid) {
+                this.saveGcode()
+            } else {
+                this.$toast.warning('Please fill in all required fields (marked in red)')
+            }
         }
     }
 
