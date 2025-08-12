@@ -350,6 +350,22 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
         }
     },
 
+    async batchUpdateJobGcodeRunsQC({ }, { gcodeId, qcStatus }: { gcodeId: string, qcStatus: string }) {
+        try {
+            console.log(`🚀 [BatchQC] Batch updating QC for gcode ${gcodeId} to ${qcStatus}`)
+
+            const response = await axios.put(`${FLEET_API_URL}/gcode/${gcodeId}/runs/qc/batch`, {
+                qc_status: qcStatus
+            })
+
+            console.log(`✅ [BatchQC] Batch update response:`, response.data)
+            return response.data
+        } catch (error) {
+            console.error('❌ [BatchQC] Failed to batch update QC:', error)
+            throw error
+        }
+    },
+
     // Helper action for printer compatibility checking
     checkPrinterCompatibility(
         { }: any,

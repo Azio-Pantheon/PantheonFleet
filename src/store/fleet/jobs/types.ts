@@ -133,3 +133,20 @@ export interface FleetCompatibilityCheck {
     incompatible_printers: FleetPrinterInfo[]
     has_compatible: boolean
 }
+export interface FleetBatchQCUpdate {
+    qc_status: 'pass' | 'fail'
+}
+
+export interface FleetBatchQCResponse {
+    updated_count: number
+    skipped_count: number
+    updated_runs: Array<{
+        run_id: string
+        printer_hostname: string
+        completed_at: string | null
+        qc_status: string
+    }>
+    errors: string[]
+    qc_status: string
+    job_gcode_id: string
+}

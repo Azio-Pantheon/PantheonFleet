@@ -450,11 +450,53 @@
 
                                             <!-- Active Runs Section - SIMPLIFIED -->
                                             <div v-if="hasActiveRuns(gcode)" class="active-runs-section">
-                                                <div class="d-flex align-center mb-2">
-                                                    <v-icon x-small color="blue" class="mr-2">mdi-play-circle</v-icon>
-                                                    <span class="text-subtitle2" style="color: #1976d2; font-weight: 600;">
-                                                        Active Runs ({{ getActiveRuns(gcode).length }})
-                                                    </span>
+                                                <div class="d-flex align-center justify-space-between mb-2">
+                                                    <div class="d-flex align-center">
+                                                        <v-icon x-small color="blue" class="mr-2">mdi-play-circle</v-icon>
+                                                        <span class="text-subtitle2" style="color: #1976d2; font-weight: 600;">
+                                                            Active Runs ({{ getActiveRuns(gcode).length }})
+                                                        </span>
+                                                    </div>
+
+                                                    <!-- NEW: QC Pass All Button -->
+                                                    <div v-if="getEligibleRunsForBatchQC(gcode).length > 0" class="d-flex align-center">
+                                                        <v-menu offset-y>
+                                                            <template #activator="{ on, attrs }">
+                                                                <v-btn small
+                                                                       color="green"
+                                                                       class="elevation-1 mr-2"
+                                                                       style="background-color: #4caf50 !important;"
+                                                                       v-bind="attrs"
+                                                                       v-on="on"
+                                                                       :loading="loadingBatchQC[gcode.id]"
+                                                                       :title="`Batch QC update for ${getEligibleRunsForBatchQC(gcode).length} completed runs`">
+                                                                    <v-icon left x-small color="white">{{ mdiCheckboxMarkedCircleOutline }}</v-icon>
+                                                                    <span style="color: white; font-size: 11px; font-weight: bold;">
+                                                                        QC Pass All ({{ getEligibleRunsForBatchQC(gcode).length }})
+                                                                    </span>
+                                                                    <v-icon right x-small color="white">{{ mdiChevronDown }}</v-icon>
+                                                                </v-btn>
+                                                            </template>
+                                                            <v-list dense>
+                                                                <v-list-item @click="batchUpdateQC(gcode, 'pass')">
+                                                                    <v-list-item-icon>
+                                                                        <v-icon small color="green">{{ mdiCheckboxMarkedCircleOutline }}</v-icon>
+                                                                    </v-list-item-icon>
+                                                                    <v-list-item-content>
+                                                                        <v-list-item-title>Pass All ({{ getEligibleRunsForBatchQC(gcode).length }} runs)</v-list-item-title>
+                                                                    </v-list-item-content>
+                                                                </v-list-item>
+                                                                <v-list-item @click="batchUpdateQC(gcode, 'fail')">
+                                                                    <v-list-item-icon>
+                                                                        <v-icon small color="red">{{ mdiCloseCircleOutline }}</v-icon>
+                                                                    </v-list-item-icon>
+                                                                    <v-list-item-content>
+                                                                        <v-list-item-title>Fail All ({{ getEligibleRunsForBatchQC(gcode).length }} runs)</v-list-item-title>
+                                                                    </v-list-item-content>
+                                                                </v-list-item>
+                                                            </v-list>
+                                                        </v-menu>
+                                                    </div>
                                                 </div>
                                                 <div class="runs-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                                     <div v-for="run in getActiveRuns(gcode)"
@@ -844,6 +886,8 @@
         private queueStatusCache: { [gcodeId: string]: FleetGcodeQueueStatus } = {}
         private loadingEnqueueGcode: { [gcodeId: string]: boolean } = {}
         private loadingEnqueueAll: boolean = false
+
+        private loadingBatchQC: { [gcodeId: string]: boolean } = {}
 
         // Progress tracking for auto-refresh
         private printerProgressCache: { [hostname: string]: number } = {}
@@ -1908,6 +1952,46 @@
             return `Printer status: ${state.charAt(0).toUpperCase() + state.slice(1)}`
         }
 
+        // Helper method
+        getEligibleRunsForBatchQC(gcode: FleetJobGcode): FleetJobGcodeRun[] {
+            const runs = this.allJobRuns[gcode.id] || []
+            return runs.filter(run =>
+                run.status === 'success' &&
+                (!run.qc || run.qc === null)
+            )
+        }
+
+        // Batch QC method - NO CONFIRMATION
+        async batchUpdateQC(gcode: FleetJobGcode, qcStatus: 'pass' | 'fail') {
+            const eligibleRuns = this.getEligibleRunsForBatchQC(gcode)
+
+            if (eligibleRuns.length === 0) {
+                this.$toast.warning('No eligible runs found for batch QC update')
+                return
+            }
+
+            this.$set(this.loadingBatchQC, gcode.id, true)
+
+            try {
+                const response = await this.$store.dispatch('fleet/jobs/batchUpdateJobGcodeRunsQC', {
+                    gcodeId: gcode.id,
+                    qcStatus: qcStatus
+                })
+
+                if (response.updated_count > 0) {
+                    this.$toast.success(`✅ Updated ${response.updated_count} runs to QC ${qcStatus.toUpperCase()}`)
+                    setTimeout(() => this.refreshJobDetails(), 500)
+                } else {
+                    this.$toast.info(`ℹ️ No runs were updated`)
+                }
+
+            } catch (error) {
+                console.error('Failed to batch update QC:', error)
+                this.$toast.error(`❌ Failed to batch update QC: ${error.message || 'Unknown error'}`)
+            } finally {
+                this.$set(this.loadingBatchQC, gcode.id, false)
+            }
+        }
 
         @Watch('allJobRuns', { deep: true })
         onAllJobRunsChanged() {
