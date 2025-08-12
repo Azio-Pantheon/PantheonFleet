@@ -577,7 +577,7 @@
                 return {
                     text: `${hostname} - ${status}`,
                     value: hostname,
-                    disabled: !isConnected || this.isPrinterBusy(printer),
+                    disabled: !isConnected,
                     printer: printer,
                     hasFilamentMismatch: hasFilamentMismatch,
                     requiredFilament: requiredFilament,
@@ -596,7 +596,7 @@
 
         openCreateRunDialog() {
             this.$toast.error('This is for debugging. Runs should be auto generated')
-            /*
+            
             this.createRunDialog.isEdit = false
             this.createRunDialog.show = true
 
@@ -605,7 +605,7 @@
             if (availablePrinters.length > 0) {
                 this.createRunDialog.form.printer_hostname = availablePrinters[0].value
             }
-            */
+            
         }
 
         editRun(run: FleetJobGcodeRun) {
