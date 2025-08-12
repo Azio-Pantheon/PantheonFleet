@@ -199,8 +199,8 @@
                         </v-chip>
                     </td>
                     <td class="">{{ item.operator_name || '--' }}</td>
-                    <td class="" :class="getDueDateClass(item.due_date)">
-                        {{ formatDateTime(item.due_date) || '--' }}
+                    <td class="" :class="getDueDateClass(item)">
+                                 {{ formatDateTime(item.due_date) || '--' }}
                     </td>
                     <td class="">{{ formatDateTime(item.created_at) }}</td>
                     <td class="">{{ truncateText(item.description, 50) || '--' }}</td>
@@ -1047,14 +1047,33 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     }
 
     getJobRowClass(item: FleetJob) {
+        // Cancelled jobs get disabled styling
         if (item.status === 'cancelled') return 'text--disabled'
+
+        // Completed jobs get normal styling (no red text)
+        if (item.status === 'complete') return 'green--text'
+
+        // Only apply red text for overdue jobs that are not complete or cancelled
         if (item.due_date && new Date(item.due_date) < new Date()) return 'red--text'
+
         return ''
     }
 
-    getDueDateClass(dueDate: string) {
-        if (!dueDate) return ''
-        const due = new Date(dueDate)
+    getDueDateClass(item: FleetJob) {
+        if (!item.due_date) return ''
+
+        // If job is complete, make it green
+        if (item.status === 'complete') {
+            return 'green--text font-weight-bold'
+        }
+
+        // If job is cancelled, no special styling
+        if (item.status === 'cancelled') {
+            return ''
+        }
+
+        // For other statuses (pending, in_progress), check due date
+        const due = new Date(item.due_date)
         const now = new Date()
         const diffTime = due.getTime() - now.getTime()
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
