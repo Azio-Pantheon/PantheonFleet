@@ -137,13 +137,8 @@
                             <v-col class="grow">
                                 <div class="title">Attention Required</div>
                                 <div>
-                                    <strong>{{ overdueJobs }}</strong> job(s) are overdue and need immediate attention
+                                    <strong>{{ overdueJobs }}</strong> job(s) are overdue and marked red below
                                 </div>
-                            </v-col>
-                            <v-col class="shrink">
-                                <v-btn color="warning" outlined @click="viewOverdueJobs">
-                                    View Overdue
-                                </v-btn>
                             </v-col>
                         </v-row>
                     </v-alert>
@@ -253,11 +248,6 @@ export default class JobStatisticsPanel extends Mixins(BaseMixin) {
         return this.totalJobs > 0 ? (this.lowPriorityJobs / this.totalJobs) * 100 : 0
     }
 
-    viewOverdueJobs() {
-        // Emit event or navigate to filtered view
-        this.$emit('filter-overdue')
-        this.$toast.info('Filtering overdue jobs - feature to be implemented')
-    }
 }
 </script>
 

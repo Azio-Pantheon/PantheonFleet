@@ -534,6 +534,12 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     private allJobRuns: { [gcodeId: string]: FleetJobGcodeRun[] } = {}
     private cacheCleanupTimeout: number | null = null
 
+    // Auto-refresh tracking
+    private printerStateCache: { [hostname: string]: string } = {}
+    private printerProgressCache: { [hostname: string]: number } = {}
+    private autoRefreshCooldown: boolean = false
+    private autoRefreshTimeout: number | null = null
+
     private gcodeRunsDialog = {
         show: false,
         loading: false,
@@ -581,6 +587,11 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     }
 
     private runStatisticsCache: { [gcodeId: string]: any } = {}
+
+    // Add this computed property for auto-refresh settings (optional)
+    get enableAutoRefresh() {
+        return this.$store.state.gui.view.jobs?.enableAutoRefresh ?? true
+    }
 
     get jobs() {
         return this.$store.state.fleet?.jobs?.jobs ?? []
@@ -723,7 +734,6 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     async mounted() {
         await this.refreshJobs()
         await this.loadCustomers()
-        this.$root.$on('fullscreen-files-uploaded', this.handleFullscreenUpload)
     }
 
     async refreshJobs() {
@@ -1886,11 +1896,121 @@ export default class JobListPanel extends Mixins(BaseMixin) {
         }, 100)
     }
 
-    beforeDestroy() {
-        this.$root.$off('fullscreen-files-uploaded', this.handleFullscreenUpload)
+    @Watch('fleetDaemonPrinters', { deep: true })
+    onFleetDaemonPrintersChanged(newPrinters: any, oldPrinters: any) {
+        // Skip if disabled, no printers, or during cooldown
+        if (!this.enableAutoRefresh || !newPrinters || this.autoRefreshCooldown) return
 
+        let shouldRefresh = false
+        const changedPrinters: string[] = []
+
+        for (const hostname in newPrinters) {
+            const printer = newPrinters[hostname]
+            const oldPrinter = oldPrinters?.[hostname]
+
+            // Check for meaningful state changes
+            const currentState = printer?.print_stats?.state
+            const previousState = this.printerStateCache[hostname] || oldPrinter?.print_stats?.state
+
+            // Detect state transitions that affect job management
+            if (currentState !== previousState && currentState) {
+                console.log(`🔄 Printer ${hostname} state changed: ${previousState} → ${currentState}`)
+
+                // Only refresh on meaningful transitions
+                const meaningfulTransitions = [
+                    'printing', 'complete', 'error', 'cancelled', 'standby'
+                ]
+
+                if (meaningfulTransitions.includes(currentState)) {
+                    shouldRefresh = true
+                    changedPrinters.push(`${hostname}:${currentState}`)
+                }
+            }
+
+            // Check for completion events (progress-based)
+            const currentProgress = printer?.display_status?.progress || 0
+            const currentProgressPercent = currentProgress * 100
+            const previousProgress = this.printerProgressCache[hostname] || 0
+
+            if (currentProgressPercent >= 100 && previousProgress < 100 && previousProgress > 0) {
+                console.log(`🎉 Printer ${hostname} completed printing (${previousProgress}% → ${currentProgressPercent}%)`)
+                shouldRefresh = true
+                changedPrinters.push(`${hostname}:completed`)
+            }
+
+            // Update caches
+            this.printerStateCache[hostname] = currentState
+            this.printerProgressCache[hostname] = currentProgressPercent
+        }
+
+        if (shouldRefresh && changedPrinters.length > 0) {
+            this.triggerAutoRefresh(changedPrinters)
+        }
+    }
+
+    toggleAutoRefresh() {
+        const newValue = !this.enableAutoRefresh
+        this.$store.dispatch('gui/saveSetting', {
+            name: 'view.jobs.enableAutoRefresh',
+            value: newValue
+        })
+
+        if (newValue) {
+            this.$toast.success('✅ Auto-refresh enabled - job list will update when printers change state')
+        } else {
+            this.$toast.info('⏸️ Auto-refresh disabled')
+            // Clear any pending refresh
+            if (this.autoRefreshTimeout) {
+                clearTimeout(this.autoRefreshTimeout)
+            }
+            this.autoRefreshCooldown = false
+        }
+    }
+    private async triggerAutoRefresh(changedPrinters: string[]) {
+        // Prevent rapid successive refreshes
+        if (this.autoRefreshCooldown) return
+
+        this.autoRefreshCooldown = true
+
+        try {
+            console.log(`🔄 Auto-refreshing job list due to printer changes: ${changedPrinters.join(', ')}`)
+
+            // Show a subtle notification
+            this.$toast.info(`📋 Refreshing jobs due to printer updates...`)
+
+            // Refresh the job list
+            await this.refreshJobs()
+
+            // Also refresh customers in case new jobs were created
+            await this.loadCustomers()
+
+            // Success notification
+            this.$toast.success(`✅ Job list updated (${changedPrinters.length} printer changes)`)
+
+        } catch (error) {
+            console.error('❌ Auto-refresh failed:', error)
+            this.$toast.error('Failed to auto-refresh job list')
+        } finally {
+            // Set cooldown to prevent excessive refreshes
+            if (this.autoRefreshTimeout) {
+                clearTimeout(this.autoRefreshTimeout)
+            }
+
+            this.autoRefreshTimeout = window.setTimeout(() => {
+                this.autoRefreshCooldown = false
+                console.log('🟢 Auto-refresh cooldown ended')
+            }, 5000) // 5 second cooldown
+        }
+    }
+
+    beforeDestroy() {
         if (this.cacheCleanupTimeout) {
             clearTimeout(this.cacheCleanupTimeout)
+        }
+
+        // NEW: Cleanup auto-refresh timeout
+        if (this.autoRefreshTimeout) {
+            clearTimeout(this.autoRefreshTimeout)
         }
     }
 
