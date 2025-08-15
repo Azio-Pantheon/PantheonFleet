@@ -355,37 +355,44 @@
                                             <span class="text-caption text--secondary">Loading print runs...</span>
                                         </div>
 
-                                        <!-- Progress bar (shown when not loading) -->
+                                        <!-- Discrete progress bar (shown when not loading) -->
                                         <div v-else class="d-flex align-center">
-                                            <!-- Main progress bar -->
-                                            <div class="gcode-progress-bar" style="height: 22px; border-radius: 11px; overflow: hidden; flex: 1; position: relative; background-color: #e8e8e8; border: 1px solid #ccc; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
-                                                <!-- Breathing blue portion (in progress) -->
-                                                <div v-if="getRunStatistics(gcode).percentages.inProgress > 0"
-                                                     class="progress-segment in-progress breathing-blue"
-                                                     :style="`width: ${getRunStatistics(gcode).percentages.inProgress}%; height: 100%; float: left;`">
-                                                </div>
+                                            <!-- Main discrete progress bar -->
+                                            <div class="gcode-discrete-progress-bar"
+                                                 style="height: 24px; border-radius: 12px; overflow: hidden; flex: 1; position: relative; background-color: #f5f5f5; border: 1px solid #ddd; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); display: flex;">
 
-                                                <!-- Blue portion (completed, no QC) -->
-                                                <div v-if="getRunStatistics(gcode).percentages.completed > 0"
-                                                     class="progress-segment completed"
-                                                     :style="`width: ${getRunStatistics(gcode).percentages.completed}%; background-color: #2196f3; height: 100%; float: left;`">
-                                                </div>
-                                                <!-- Gray portion (remaining needed) -->
-                                                <div v-if="getRunStatistics(gcode).percentages.remaining > 0"
-                                                     class="progress-segment remaining"
-                                                     :style="`width: ${getRunStatistics(gcode).percentages.remaining}%; background-color: #9e9e9e; height: 100%; float: left;`">
-                                                </div>
-                                                <!-- Green portion (passed QC) -->
-                                                <div v-if="getRunStatistics(gcode).percentages.passed > 0"
-                                                     class="progress-segment passed"
-                                                     :style="`width: ${getRunStatistics(gcode).percentages.passed}%; background-color: #4caf50; height: 100%; float: left;`">
+                                                <!-- Individual run segments -->
+                                                <div v-for="(segment, index) in getRunSegments(gcode)"
+                                                     :key="index"
+                                                     :class="getSegmentClass(segment)"
+                                                     :style="getSegmentStyle(gcode, segment)">
+
+                                                    <!-- Segment content/icon -->
+                                                    <div class="segment-content">
+                                                        <v-icon v-if="segment.status === 'in_progress'"
+                                                                x-small
+                                                                color="white"
+                                                                class="breathing-icon">
+                                                            mdi-cog
+                                                        </v-icon>
+                                                        <v-icon v-else-if="segment.status === 'passed_qc'"
+                                                                x-small
+                                                                color="white">
+                                                            mdi-check
+                                                        </v-icon>
+                                                        <v-icon v-else-if="segment.status === 'completed_no_qc'"
+                                                                x-small
+                                                                color="white">
+                                                            mdi-clock-outline
+                                                        </v-icon>
+                                                    </div>
                                                 </div>
                                             </div>
 
                                             <!-- Red bar for failures (separate, attached to the right) -->
                                             <div v-if="getRunStatistics(gcode).totalFailed > 0"
                                                  class="failure-bar ml-2"
-                                                 :style="`width: ${Math.min(getRunStatistics(gcode).totalFailed * 8 + 20, 60)}px; height: 22px; background-color: #f44336; border-radius: 11px; position: relative; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2);`"
+                                                 :style="`width: ${Math.min(getRunStatistics(gcode).totalFailed * 12 + 24, 80)}px; height: 24px; background-color: #f44336; border-radius: 12px; position: relative; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.2);`"
                                                  :title="`${getRunStatistics(gcode).totalFailed} failed runs (${getRunStatistics(gcode).technicalFailures} technical + ${getRunStatistics(gcode).qcFailures} QC failures)`">
                                                 <span style="color: white; font-size: 11px; font-weight: bold;">
                                                     {{ getRunStatistics(gcode).totalFailed }}
@@ -1993,6 +2000,114 @@
             }
         }
 
+        getRunSegments(gcode: FleetJobGcode) {
+            const runs = this.allJobRuns[gcode.id] || []
+            const segments = []
+
+            // Filter out failed runs - they don't appear in the progress bar
+            const goodRuns = runs.filter(run => {
+                if (run.status === 'in_progress') return true
+                if (run.status === 'success') return true
+                return false // Exclude failed, cancelled, etc.
+            })
+
+            // Sort good runs by status priority for consistent display
+            const sortedGoodRuns = [...goodRuns].sort((a, b) => {
+                const statusPriority = {
+                    'in_progress': 1,
+                    'success': 2
+                }
+
+                const aPriority = statusPriority[a.status] || 3
+                const bPriority = statusPriority[b.status] || 3
+
+                if (aPriority !== bPriority) {
+                    return aPriority - bPriority
+                }
+
+                // Within same status, sort by start time (newest first)
+                return new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
+            })
+
+            // Add segments for existing good runs
+            sortedGoodRuns.forEach((run, index) => {
+                let status = 'completed_no_qc'
+
+                if (run.status === 'in_progress') {
+                    status = 'in_progress'
+                } else if (run.status === 'success') {
+                    if (run.qc === 'pass') {
+                        status = 'passed_qc'
+                    } else {
+                        status = 'completed_no_qc' // Default for success without QC or QC fail
+                    }
+                }
+
+                segments.push({
+                    index: index,
+                    status: status,
+                    run: run,
+                    runId: run.id
+                })
+            })
+
+            // Add empty segments for remaining required runs
+            const remainingSlots = Math.max(0, gcode.required_runs - sortedGoodRuns.length)
+            for (let i = 0; i < remainingSlots; i++) {
+                segments.push({
+                    index: sortedGoodRuns.length + i,
+                    status: 'remaining',
+                    run: null,
+                    runId: null
+                })
+            }
+
+            return segments
+        }
+
+        getSegmentStyle(gcode: FleetJobGcode, segment: any): string {
+            const totalSegments = Math.max(gcode.required_runs, 1)
+            const segmentWidth = 100 / totalSegments // No margins to fill full width
+
+            let backgroundColor = '#bdbdbd' // Default gray for remaining
+
+            switch (segment.status) {
+                case 'in_progress':
+                    backgroundColor = '#2196f3'
+                    break
+                case 'completed_no_qc':
+                    backgroundColor = '#1976d2'
+                    break
+                case 'passed_qc':
+                    backgroundColor = '#4caf50'
+                    break
+                case 'remaining':
+                    backgroundColor = '#bdbdbd'
+                    break
+            }
+
+            return `
+                width: ${segmentWidth}%;
+                height: 100%;
+                background-color: ${backgroundColor};
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                border-radius: 2px;
+            `
+        }
+
+        getSegmentClass(segment: any): string {
+            const classes = ['segment-item']
+
+            if (segment.status === 'in_progress') {
+                classes.push('breathing-segment')
+            }
+
+            return classes.join(' ')
+        }
+
         @Watch('allJobRuns', { deep: true })
         onAllJobRunsChanged() {
             // Clear cache when runs data changes
@@ -2239,5 +2354,66 @@
     /* Dark theme adjustments */
     .theme--dark .queue-details {
         background-color: rgba(255, 152, 0, 0.08);
+    }
+
+    .gcode-discrete-progress-bar {
+        display: flex;
+        gap: 1px; /* Adjust to desired gap size */
+    }
+    .segment-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Breathing animation for in-progress segments */
+    .breathing-segment {
+        background: linear-gradient(90deg, #1976d2 0%, #2196f3 25%, #64b5f6 50%, #2196f3 75%, #1976d2 100%);
+        background-size: 200% 100%;
+        animation: breathe 2s linear infinite;
+    }
+
+    .breathing-icon {
+        animation: spin 2s linear infinite;
+    }
+
+    @keyframes breathe {
+        0% {
+            background-position: 200% 0;
+        }
+
+        100% {
+            background-position: -200% 0;
+        }
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* Dark theme support */
+    .theme--dark .gcode-discrete-progress-bar {
+        background-color: #424242;
+        border-color: #616161;
+    }
+
+    .theme--dark .empty-dot {
+        background-color: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1200px) {
+        .gcode-discrete-progress-bar {
+            height: 20px;
+            border-radius: 10px;
+        }
     }
 </style>
