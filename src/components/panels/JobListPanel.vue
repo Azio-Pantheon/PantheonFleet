@@ -1824,6 +1824,15 @@ export default class JobListPanel extends Mixins(BaseMixin) {
                 })
             }
 
+            // ENHANCEMENT: If the job details dialog is open for this job, refresh its data
+            // This ensures the user sees the newly created GCode files immediately
+            if (this.detailsDialog.show &&
+                this.detailsDialog.item &&
+                this.detailsDialog.item.id === jobId) {
+                console.log('🔄 Refreshing job details to show new GCode files')
+                await this.loadJobGcodesAndRuns(jobId)
+            }
+
         } catch (error: unknown) {
             console.error('❌ Batch GCode creation failed:', error)
 
@@ -1842,12 +1851,20 @@ export default class JobListPanel extends Mixins(BaseMixin) {
     async onJobCreated(data: { job: FleetJob, batchGcodes: any[] }) {
         console.log('🎉 Job created:', data.job)
 
-        // Handle batch GCode creation in background
+        // SMOOTH UX: Immediately show the new job details to the user
+        this.$toast.success('Job created successfully! Opening job details...')
+
+        // Open the job details dialog for the newly created job
+        // This provides immediate feedback and allows the user to see their new job
+        await this.viewJobDetails(data.job)
+
+        // Handle batch GCode creation in background (non-blocking)
         if (data.batchGcodes.length > 0) {
             console.log('🔧 Creating batch GCodes:', data.batchGcodes)
+            // This happens in the background while user views job details
             this.createBatchGcodeFilesInBackground(data.job.id, data.batchGcodes)
         } else {
-            // Just refresh jobs list
+            // Just refresh jobs list in background
             this.refreshJobsInBackground()
         }
     }
