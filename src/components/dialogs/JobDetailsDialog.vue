@@ -2007,8 +2007,8 @@
             // Filter out failed runs - they don't appear in the progress bar
             const goodRuns = runs.filter(run => {
                 if (run.status === 'in_progress') return true
-                if (run.status === 'success') return true
-                return false // Exclude failed, cancelled, etc.
+                if (run.status === 'success' && run.qc !== 'fail') return true
+                return false
             })
 
             // Sort good runs by status priority for consistent display
