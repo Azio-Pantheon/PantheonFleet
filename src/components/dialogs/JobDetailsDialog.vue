@@ -426,6 +426,20 @@
                                                     <span class="text-subtitle2" style="color: #ff9800; font-weight: 600;">
                                                         Queue: {{ getQueueStatus(gcode).total_queued }} jobs across {{ Object.keys(getQueueStatus(gcode).queued_per_printer).length }} printers
                                                     </span>
+
+                                                    <!-- Clear Queue Button -->
+                                                    <v-btn x-small
+                                                           color="red"
+                                                           outlined
+                                                           :loading="loadingClearQueue[gcode.id]"
+                                                           @click="confirmClearQueue(gcode)"
+                                                           :disabled="getQueueStatus(gcode).total_queued === 0"
+                                                           title="Clear all queued jobs for this gcode file"
+                                                           class="ml-2"
+                                                           style="min-width: 50px !important; padding: 0 4px !important;">
+                                                        <v-icon x-small class="mr-1">mdi-trash-can-outline</v-icon>
+                                                        <span style="font-size: 10px;">Clear</span>
+                                                    </v-btn>
                                                 </div>
                                                 <div class="queue-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                                                     <div v-for="(count, hostname) in getQueueStatus(gcode).queued_per_printer"
@@ -798,6 +812,7 @@
         mdiCheckboxMarkedCircleOutline,
         mdiCloseCircleOutline,
         mdiHelpCircleOutline,
+        mdiTrashCanOutline,
     } from '@mdi/js'
 
     interface FleetJob {
@@ -870,6 +885,7 @@
         mdiCheckboxMarkedCircleOutline = mdiCheckboxMarkedCircleOutline
         mdiCloseCircleOutline = mdiCloseCircleOutline
         mdiHelpCircleOutline = mdiHelpCircleOutline
+        mdiTrashCanOutline = mdiTrashCanOutline
 
         @Prop({ type: Boolean, default: false })
         readonly value!: boolean
@@ -893,11 +909,18 @@
         private queueStatusCache: { [gcodeId: string]: FleetGcodeQueueStatus } = {}
         private loadingEnqueueGcode: { [gcodeId: string]: boolean } = {}
         private loadingEnqueueAll: boolean = false
+        private loadingClearQueue: { [gcodeId: string]: boolean } = {}
 
         private loadingBatchQC: { [gcodeId: string]: boolean } = {}
 
         // Progress tracking for auto-refresh
         private printerProgressCache: { [hostname: string]: number } = {}
+
+        private clearQueueDialog = {
+            show: false,
+            loading: false,
+            gcode: null as FleetJobGcode | null
+        }
 
         // Enqueue confirmation dialog
         private enqueueDialog = {
@@ -2096,6 +2119,52 @@
                 position: relative;
                 border-radius: 2px;
             `
+        }
+
+        confirmClearQueue(gcode: FleetJobGcode) {
+            const queueStatus = this.getQueueStatus(gcode)
+            if (!queueStatus || queueStatus.total_queued === 0) {
+                this.$toast.info('No queued jobs to clear')
+                return
+            }
+
+            // Simple confirmation using browser confirm for now
+            // You can replace this with a custom dialog component if preferred
+            const message = `Are you sure you want to clear all ${queueStatus.total_queued} queued jobs for ${gcode.gcode_filename}?\n\nThis will remove queued jobs from ${Object.keys(queueStatus.queued_per_printer).length} printers and cannot be undone.`
+
+            if (confirm(message)) {
+                this.clearGcodeQueue(gcode)
+            }
+        }
+
+        async clearGcodeQueue(gcode: FleetJobGcode) {
+            this.$set(this.loadingClearQueue, gcode.id, true)
+
+            try {
+                const response = await this.$store.dispatch('fleet/jobs/clearGcodeQueue', gcode.id)
+
+                if (response.success) {
+                    this.$toast.success(`✅ Cleared ${response.cleared_count} queued jobs for ${response.gcode_filename}`)
+
+                    // Clear the local queue status cache
+                    this.$delete(this.queueStatusCache, gcode.id)
+
+                    // Refresh queue status
+                    await this.loadJobQueueStatus()
+
+                    // Optional: Refresh entire job details
+                    this.$emit('refresh')
+
+                } else {
+                    this.$toast.error(`❌ Failed to clear queue: ${response.error || 'Unknown error'}`)
+                }
+
+            } catch (error) {
+                console.error('Failed to clear gcode queue:', error)
+                this.$toast.error(`❌ Failed to clear queue: ${error.message || 'Unknown error'}`)
+            } finally {
+                this.$set(this.loadingClearQueue, gcode.id, false)
+            }
         }
 
         getSegmentClass(segment: any): string {

@@ -202,5 +202,22 @@ export const mutations: MutationTree<FleetJobsState> = {
         })
 
         console.log(`✅ [Queue Mutation] Batch updated ${Object.keys(queueStatuses).length} queue statuses`)
+    },
+
+    // Optimistically clear queue status (for immediate UI feedback)
+    clearGcodeQueueStatusOptimistic(state, gcodeId: string) {
+        if (state.queueStatus && state.queueStatus[gcodeId]) {
+            Vue.delete(state.queueStatus, gcodeId)
+            console.log(`🗑️ [Queue Mutation] Optimistically cleared queue status for gcode ${gcodeId}`)
+        }
+    },
+
+    // Restore queue status (for error rollback scenarios)
+    restoreGcodeQueueStatus(state, { gcodeId, queueStatus }: { gcodeId: string, queueStatus: FleetGcodeQueueStatus }) {
+        if (!state.queueStatus) {
+            Vue.set(state, 'queueStatus', {})
+        }
+        Vue.set(state.queueStatus!, gcodeId, queueStatus)
+        console.log(`↩️ [Queue Mutation] Restored queue status for gcode ${gcodeId}`)
     }
 }

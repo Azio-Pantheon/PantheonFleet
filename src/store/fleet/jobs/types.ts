@@ -150,3 +150,16 @@ export interface FleetBatchQCResponse {
     qc_status: string
     job_gcode_id: string
 }
+
+export interface FleetClearQueueResponse {
+    success: boolean
+    gcode_id?: string
+    gcode_filename?: string
+    cleared_count: number
+    printers_affected: string[]
+    initial_queued?: number
+    final_queued?: number
+    required_runs?: number
+    message?: string
+    error?: string
+}

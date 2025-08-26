@@ -1,6 +1,6 @@
 import Vue from 'vue'
 import { ActionTree } from 'vuex'
-import { FleetJobsState, FleetJob, FleetCustomer, FleetJobGcode } from './types'
+import { FleetJobsState, FleetJob, FleetCustomer, FleetJobGcode, FleetClearQueueResponse } from './types'
 import { FleetJobGcodeRun, FleetJobGcodeRunCreate, FleetJobGcodeRunUpdate } from './types'
 // Import new queue types
 import { FleetEnqueueRequest, FleetEnqueueResponse, FleetJobEnqueueAllResponse } from './types'
@@ -362,6 +362,31 @@ export const actions: ActionTree<FleetJobsState, RootState> = {
             return response.data
         } catch (error) {
             console.error('❌ [BatchQC] Failed to batch update QC:', error)
+            throw error
+        }
+    },
+
+    async clearGcodeQueue({ commit }, gcodeId: string): Promise<FleetClearQueueResponse> {
+        try {
+            console.log(`🗑️ [Queue] Clearing all queued jobs for gcode ${gcodeId}`)
+
+            const response = await axios.delete(`${FLEET_API_URL}/gcode/${gcodeId}/queue/clear`)
+
+            console.log(`✅ [Queue] Clear queue response:`, response.data)
+
+            // Update local state - remove queue status since queue was cleared
+            if (response.data.success) {
+                commit('updateGcodeQueueStatus', {
+                    gcodeId,
+                    queueStatus: null // Clear the status
+                })
+
+                console.log(`🗑️ [Queue] Cleared local queue status for gcode ${gcodeId}`)
+            }
+
+            return response.data
+        } catch (error) {
+            console.error('❌ [Queue] Failed to clear gcode queue:', error)
             throw error
         }
     },
