@@ -34,9 +34,10 @@ zero manual DB setup. The equivalent view DDL is in
   every 30s **only while the tab is visible** (immediate poll on refocus), commits
   the exact `farm/SET_FLEET_DAEMON_PRINTER` payloads the WS handler builds, diffs
   for removals, hydrates `gui/remoteprinters` from the cloud mirror, and flips
-  `farm/SET_FLEET_DAEMON_CONNECTED` on site offline. An axios interceptor appends
-  `site=<active>` to `/api` reads (so the existing fleet store actions work
-  unchanged against `fleetDaemonUrl → '/api'`) and routes any 401 to `/login`.
+  `farm/SET_FLEET_DAEMON_CONNECTED` on site offline. An axios interceptor routes
+  any `/api` 401 to `/login`. Every database read (history, parts, spools,
+  lookups, analytics) is **cross-site**; only map/status polling is per-site
+  (`fleetDaemonUrl → '/api'` keeps the fleet store actions working unchanged).
 - **Site tabs** in the topbar (`TheCloudSiteTabs.vue`) with online/offline badge
   dots; switching clears the farm + remoteprinters stores before re-polling
   (hostname collisions across sites never merge). Persisted in localStorage

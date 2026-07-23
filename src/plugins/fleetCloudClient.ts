@@ -148,29 +148,15 @@ class FleetCloudClient {
 let interceptorsInstalled = false
 
 /**
- * Global axios wiring for cloud mode:
- * - append `site=<active>` to /api GETs that don't already carry one, so the
- *   existing fleet store actions (history/analytics/spools) work unchanged
- * - on any /api 401, route to the login page
+ * Global axios wiring for cloud mode: on any /api 401, route to the login page.
+ *
+ * Note: no `site` is injected into requests — every database read (history,
+ * parts, spools, lookups, analytics) is cross-site by design; only the live
+ * map/status polling is per-site, and it passes `site` explicitly.
  */
 function installCloudInterceptors() {
     if (interceptorsInstalled || !isFleetCloud) return
     interceptorsInstalled = true
-
-    const SITELESS = ['/api/sites', '/api/status', '/api/login', '/api/history/inspectors', '/api/spool/lookup']
-
-    axios.interceptors.request.use((config) => {
-        const url = config.url ?? ''
-        if (url.startsWith('/api/') && !SITELESS.some((p) => url.startsWith(p))) {
-            const u = new URL(url, window.location.origin)
-            const site = store.state.cloud?.activeSite
-            if (site && !u.searchParams.has('site')) {
-                u.searchParams.set('site', site)
-                config.url = u.pathname + '?' + u.searchParams.toString()
-            }
-        }
-        return config
-    })
 
     axios.interceptors.response.use(
         (response) => response,

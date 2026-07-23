@@ -49,11 +49,6 @@ export default class SpoolManagement extends Mixins(BaseMixin) {
         this.checkAddSpoolMode()
     }
 
-    @Watch('cloudActiveSite')
-    onCloudSiteChanged() {
-        this.loadAll()
-    }
-
     async loadAll() {
         const errors: string[] = []
         await Promise.allSettled([

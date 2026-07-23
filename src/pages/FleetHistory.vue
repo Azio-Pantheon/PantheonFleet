@@ -53,11 +53,6 @@ export default class FleetHistory extends Mixins(BaseMixin) {
         this.checkAddPartMode()
     }
 
-    @Watch('cloudActiveSite')
-    onCloudSiteChanged() {
-        this.$store.dispatch('fleet/history/loadAnalytics')
-    }
-
     @Watch('$route')
     onRouteChange(_route: Route) {
         this.checkQcMode()
