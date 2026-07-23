@@ -124,6 +124,6 @@
         "last 2 edge major versions"
     ],
     "engines": {
-        "node": "^18 || ^20"
+        "node": "24.x"
     }
 }
