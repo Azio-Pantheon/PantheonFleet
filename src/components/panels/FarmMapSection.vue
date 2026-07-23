@@ -359,7 +359,8 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
             top: this.pad + 'px',
             width: this.gridW + 'px',
             height: this.gridH + 'px',
-            backgroundImage: `url(${this.geometry.floorPlanImage})`,
+            // quoted: the emitted asset filename contains a space ("NewBuilding cropped-…")
+            backgroundImage: `url("${encodeURI(this.geometry.floorPlanImage)}")`,
             backgroundSize: this.geometry.floorPlanFit,
             backgroundPosition: '0 0',
         }
