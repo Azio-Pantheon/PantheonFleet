@@ -20,25 +20,52 @@ export async function query(text: string, params: unknown[] = []): Promise<any[]
 
 export const AUTH_COOKIE = 'fleet_online'
 
-export function expectedToken(): string {
-    const password = process.env.DASHBOARD_PASSWORD ?? ''
-    const salt = process.env.AUTH_SALT ?? ''
+function authSecret(): string {
+    const secret = process.env.AUTH_SECRET ?? process.env.AUTH_SALT
+    if (!secret) throw new Error('AUTH_SECRET is not configured')
+    return secret
+}
+
+function hmac(payload: string): string {
     return createHash('sha256')
-        .update(password + salt)
+        .update(payload + authSecret())
         .digest('hex')
+}
+
+/** Stateless session token: base64url(email).expiryMs.hmac — no database. */
+export function signSession(email: string, ttlMs: number): string {
+    const payload = `${Buffer.from(email).toString('base64url')}.${Date.now() + ttlMs}`
+    return `${payload}.${hmac(payload)}`
+}
+
+/** Returns the session's email, or null if the token is invalid/expired. */
+export function verifySession(token: string): string | null {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const [emailB64, expiry, sig] = parts
+    const expected = hmac(`${emailB64}.${expiry}`)
+    const a = Buffer.from(sig)
+    const b = Buffer.from(expected)
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null
+    if (!/^\d+$/.test(expiry) || Number(expiry) < Date.now()) return null
+    return Buffer.from(emailB64, 'base64url').toString()
+}
+
+/** ALLOWED_EMAILS: comma-separated exact emails and/or @domain entries. */
+export function emailAllowed(email: string): boolean {
+    const entries = (process.env.ALLOWED_EMAILS ?? '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean)
+    const lower = email.toLowerCase()
+    return entries.some((entry) => (entry.startsWith('@') ? lower.endsWith(entry) : lower === entry))
 }
 
 /** Auth guard for every endpoint except /api/login. Returns false after sending a 401. */
 export function requireAuth(req: VercelRequest, res: VercelResponse): boolean {
-    if (!process.env.DASHBOARD_PASSWORD) {
-        res.status(500).json({ error: 'DASHBOARD_PASSWORD is not configured' })
-        return false
-    }
-    const token = req.cookies?.[AUTH_COOKIE] ?? ''
-    const expected = expectedToken()
-    const a = Buffer.from(token)
-    const b = Buffer.from(expected)
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    const email = verifySession(req.cookies?.[AUTH_COOKIE] ?? '')
+    // Re-check the allowlist so removing an email locks out existing sessions too
+    if (!email || !emailAllowed(email)) {
         res.status(401).json({ error: 'unauthorized' })
         return false
     }

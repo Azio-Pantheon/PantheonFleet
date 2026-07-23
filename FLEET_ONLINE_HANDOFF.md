@@ -1,5 +1,20 @@
 # Handoff: fleet_online — read-only cloud Fleet_Mainsail on Vercel
 
+> **STATUS (2026-07-22): IMPLEMENTED AND LIVE** at https://pantheon-fleet.vercel.app.
+> This document is the original plan, kept for context — the shipped state is
+> described in `FLEET_ONLINE_DEPLOY.md`, which supersedes it. Notable deviations
+> decided with the owner after launch:
+> - **Auth**: Sign in with Google + `ALLOWED_EMAILS` allowlist (`@pantheondesign.com`),
+>   signed stateless session cookies — NOT the shared password of §5.2.
+> - **Site scoping**: the site tabs (labeled Vancouver / San Francisco) scope only
+>   the live fleet map; ALL database reads (history, parts, analytics, spools,
+>   lookups) are always cross-site — the §5.5 per-site panels + "all sites"
+>   toggle were removed.
+> - **Dedup**: inlined as a CTE in the adapter (`api/_lib.ts`) instead of the §4
+>   `CREATE VIEW` (no Neon-side setup); DDL kept in `sql/` for ad-hoc use.
+> - **Extras**: topbar camera QR lookup; per-site floor plans (SF schematic /
+>   Vancouver `NewBuilding cropped.png`).
+
 Implementation handoff. Written 2026-07-22 after planning with the owner (Azi). This repo (branch `Fleet_online`) is the Fleet_Mainsail fork; the goal is deploying it on Vercel as a **read-only, two-site** cloud app backed by the Neon aggregate that both sites' fleet_daemons already populate. Companion docs in the fleet_daemon repo: `MULTISITE_HANDOFF.md` (§6.5 scope, §6.8 dedup, §6.10–6.13) and `ARCHITECTURE.md`.
 
 ## 1. Context — what already exists and works

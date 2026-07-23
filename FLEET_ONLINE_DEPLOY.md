@@ -1,84 +1,131 @@
-# fleet_online — deploying this branch on Vercel
+# fleet_online — the cloud dashboard on Vercel
 
-Implementation of `FLEET_ONLINE_HANDOFF.md`, completed 2026-07-22. Read-only,
-two-site cloud dashboard backed by the Neon aggregate the fleet_daemons populate.
+Implementation of `FLEET_ONLINE_HANDOFF.md`, deployed 2026-07-22 and iterated the
+same day. **Live at https://pantheon-fleet.vercel.app** (project `pantheon-fleet`,
+CLI-deployed from this branch: `vercel deploy --prod`). This doc reflects the
+shipped state, including where it deliberately diverges from the original handoff.
 
-## What was built
+## What runs where
 
-**Backend — `/api/*` Vercel serverless functions** (TypeScript, `@neondatabase/serverless`):
+**Backend — `/api/*` Vercel serverless functions** (TypeScript compiled as
+CommonJS via `api/tsconfig.json` — ESM emit breaks Vercel's extensionless
+relative imports; `@neondatabase/serverless` over HTTP):
 
 | Route | Notes |
 |---|---|
-| `POST /api/login` | shared password → `sha256(password + AUTH_SALT)` httpOnly cookie (30d, Secure, Lax) |
+| `GET/POST /api/login` | Sign in with Google (see Auth below) |
 | `GET /api/sites` | `cloud_sites` + derived `online` (heartbeat < 90s) |
-| `GET /api/status?site=` | roster from `cloud_fleet_status` + `cloud_remoteprinters` meta |
-| `GET /api/history` | same params as fleet_daemon `/history` + `site` (omit/`all` = both); records carry `site` = display_site |
-| `GET /api/history/analytics`, `/analytics/parts` | daemon aggregation SQL ported verbatim + site filter |
+| `GET /api/status?site=` | live roster from `cloud_fleet_status` + `cloud_remoteprinters` meta — the only per-site read |
+| `GET /api/history` | fleet_daemon `/history` params + optional `site`; records carry `site` = display_site |
+| `GET /api/history/analytics`, `/analytics/parts` | daemon aggregation SQL ported verbatim |
 | `GET /api/history/inspectors` | global |
-| `GET /api/spool/vendors|filaments|spools` | joined shapes rebuilt from the JSONB mirrors |
-| `GET /api/spool/lookup/[qr]` | nested spool→filament→vendor; QR is global, no site filter |
+| `GET /api/spool/vendors\|filaments\|spools` | joined shapes rebuilt from the JSONB mirrors |
+| `GET /api/spool/lookup/[qr]` | nested spool→filament→vendor; QR is globally unique |
 
-Every route except login is GET-only and behind the cookie guard (`api/_lib.ts`,
-timing-safe compare). **No mutating routes exist.**
+Every data route is GET-only behind the session guard. **No mutating routes exist.**
 
-The §6.8 dedup is **inlined as a CTE** (`HIST_CTE` in `api/_lib.ts`) in every
-history/analytics query instead of requiring a one-time `CREATE VIEW` in Neon —
-zero manual DB setup. The equivalent view DDL is in
-`sql/cloud_print_history_deduped.sql` if you ever want it for ad-hoc queries.
+The handoff §6.8 dedup is **inlined as a CTE** (`HIST_CTE` in `api/_lib.ts`) in
+every history/analytics query — no view needs creating in Neon. Equivalent DDL
+for ad-hoc use: `sql/cloud_print_history_deduped.sql`.
 
-**Frontend (all gated by build-time flags, local mode untouched):**
+**Frontend** (flags: `VUE_APP_FLEET_CLOUD=1` selects the cloud transport and
+implies read-only; `VUE_APP_FLEET_READONLY=1` alone = read-only chrome for local
+testing; local mode is untouched):
 
-- `src/plugins/cloudMode.ts` — `VUE_APP_FLEET_CLOUD=1` (cloud transport, implies
-  read-only), `VUE_APP_FLEET_READONLY=1` (read-only chrome alone, for local testing).
-- `src/plugins/fleetCloudClient.ts` — polls `/api/sites` + `/api/status?site=<active>`
-  every 30s **only while the tab is visible** (immediate poll on refocus), commits
-  the exact `farm/SET_FLEET_DAEMON_PRINTER` payloads the WS handler builds, diffs
-  for removals, hydrates `gui/remoteprinters` from the cloud mirror, and flips
-  `farm/SET_FLEET_DAEMON_CONNECTED` on site offline. An axios interceptor routes
-  any `/api` 401 to `/login`. Every database read (history, parts, spools,
-  lookups, analytics) is **cross-site**; only map/status polling is per-site
-  (`fleetDaemonUrl → '/api'` keeps the fleet store actions working unchanged).
-- **Site tabs** in the topbar (`TheCloudSiteTabs.vue`) with online/offline badge
-  dots; switching clears the farm + remoteprinters stores before re-polling
-  (hostname collisions across sites never merge). Persisted in localStorage
-  (deviation from the handoff's `/site/:siteId` route-param sketch — same
-  behavior, far less router churn).
-- **Login page** (`src/pages/CloudLogin.vue`) rendered chrome-less via App.vue.
-- **Nav/routes**: cloud mode shows only Dashboard (fleet map), Fleet History,
-  Spools; a router guard redirects every other path to `/`. Archive tab hidden;
-  gcode/telemetry download buttons hidden in job detail dialogs.
-- **Read-only chrome** (`isFleetReadonly` in BaseMixin): topbar QC/Add-Spool/
-  Add-Part, map Edit/Draw/Add-Printer (drag-to-place unreachable), reconnect-all,
-  history collect + dev mode, parts QC editing/QC mode/add-part/delete/note edit,
-  spool/filament/vendor add/edit/archive/destroy columns, Settings→Remote
-  Printers add/edit/remove + daemon URL field.
-- **All-sites toggle** on Jobs + Parts tabs adds a Site column (`display_site`).
-- **Per-site floor geometry** (`src/components/panels/farmMapGeometry.ts`):
-  `sf` = the 25×12 schematic this branch already had (aisles, bay door, ground
-  floor); `pantheonfleet` = the old building recovered from git history
-  (pre-`97ca3c6a`): 20×12 grid over the `NewBuilding cropped.png` floor plan,
-  single map. Local (non-cloud) builds default to `sf`; set
-  `VUE_APP_FLEET_SITE=pantheonfleet` if this branch ever runs at the old site.
+- `src/plugins/fleetCloudClient.ts` polls `/api/sites` + `/api/status?site=<active>`
+  every 30s **only while the tab is visible** (immediate poll on refocus),
+  commits the same `farm/SET_FLEET_DAEMON_PRINTER` payloads the WS handler
+  builds, diffs for removals, hydrates `gui/remoteprinters` from the cloud
+  mirror, and flips `farm/SET_FLEET_DAEMON_CONNECTED` on site offline. An axios
+  interceptor routes any `/api` 401 to `/login`.
+- `gui/fleetDaemonUrl` resolves to `/api` in cloud mode, so the fleet store
+  actions work unchanged.
+
+## Site scoping (differs from the handoff)
+
+The handoff's per-site tabs + "all sites" toggle evolved into:
+
+- **Site tabs scope ONLY the live fleet map.** Labels are display names for the
+  Neon site ids (`SITE_LABELS` in `src/store/cloud/types.ts`):
+  `pantheonfleet` → **Vancouver**, `sf` → **San Francisco**. Active tab =
+  underline highlight; online/offline badge dot per site. Switching clears the
+  farm + remoteprinters stores before re-polling (cross-site hostname
+  collisions never merge).
+- **Every database read is cross-site, always**: Jobs + Parts lists (with a
+  permanent Site column), analytics, spool/filament/vendor lists, QR lookups,
+  and the part/spool detail fetches. There is no site toggle. Caveat: per-site
+  id sequences mean e.g. two spools can share `#id`; QR codes stay unique.
+
+## Per-site floor geometry
+
+`src/components/panels/farmMapGeometry.ts`:
+
+- **sf (San Francisco)** — the 25×12 schematic this branch already had (aisle
+  dividers/labels, bay door, Ground Floor section).
+- **pantheonfleet (Vancouver)** — the old building recovered from git history
+  (pre-`97ca3c6a`): `src/components/ui/NewBuilding cropped.png` rendered behind
+  an invisible 20×12 grid (printers still snap to cells) at the old framing
+  (`background-size: 110% 170%`), **no schematic grid lines**, no Ground Floor.
+  Gotcha: the asset filename contains a space, so the CSS url must stay
+  quoted/encoded (`url("...%20...")`) — unquoted broke it once already.
+- Local (non-cloud) builds default to `sf`; override with
+  `VUE_APP_FLEET_SITE=pantheonfleet`.
+
+## Auth — Sign in with Google (replaced the shared password)
+
+- Login page renders a Google button (`GET /api/login` supplies the client id).
+- `POST /api/login {credential}` verifies the Google ID token via Google's
+  tokeninfo endpoint (aud/iss/exp/`email_verified` checked), requires the email
+  to match `ALLOWED_EMAILS`, then sets a **stateless signed session cookie**
+  (`base64url(email).expiryMs.hmac`, 30d, httpOnly/Secure/Lax; no database).
+- The guard on every route re-verifies the signature, expiry, **and the
+  allowlist** — removing an email locks out existing sessions on their next
+  request. Rotating `AUTH_SECRET` signs everyone out instantly.
+
+## UI extras beyond the handoff
+
+- **Topbar QR Lookup** (`TheQrLookup.vue`, visible read-only): phone camera
+  photo → zxing-wasm decode (DataMatrix/QR, same pipeline as QC mode) or typed/
+  scanner input (strips `#0`/`#1` prefixes) → looks up a **part** first
+  (cross-site), falls back to a **spool**, renders the record inline.
+- Fleet History page: Printer Status Overview panel removed; Archive tab hidden
+  in cloud mode; gcode/telemetry download buttons hidden in job detail dialogs.
+- Read-only chrome (`isFleetReadonly`): topbar QC/Add-Spool/Add-Part, map
+  Edit/Draw/Add-Printer, reconnect-all, history collect + dev mode, parts QC
+  editing/delete/note edit, spool/filament/vendor mutations, Settings → Remote
+  Printers editing.
+- Cloud nav shows only Dashboard (map), Fleet History, Spools; a router guard
+  redirects everything else to `/`.
 
 ## Vercel project settings
 
-- Build command: **`vite build`** (do NOT use `npm run build` — its 7z zip step fails on Vercel). Output dir `dist`. Both are pinned in `vercel.json`, which also rewrites non-`/api` paths to `index.html`.
-- Environment variables:
-  - `DATABASE_URL` — the Neon connection string (pooled/HTTP is fine here)
-  - `DASHBOARD_PASSWORD` — the shared password
-  - `AUTH_SALT` — any fixed random string
-  - `VUE_APP_FLEET_CLOUD=1`
-  - `VUE_APP_FLEET_READONLY=1`
+- Build command **`vite build`** (NOT `npm run build` — its 7z step fails),
+  output `dist`, SPA rewrite for non-`/api` paths — all pinned in `vercel.json`.
+- Production environment variables:
+  - `DATABASE_URL` — Neon connection string (pooled/HTTP fine here)
+  - `GOOGLE_CLIENT_ID` — OAuth Web client id (authorized JS origin =
+    `https://pantheon-fleet.vercel.app`)
+  - `ALLOWED_EMAILS` — comma-separated; exact emails and/or `@domain.com`
+    entries (currently `@pantheondesign.com`)
+  - `AUTH_SECRET` — random string signing session cookies
+  - `VUE_APP_FLEET_CLOUD=1`, `VUE_APP_FLEET_READONLY=1` (build-time — changing
+    them requires a redeploy)
+  - Legacy, unused, safe to delete: `DASHBOARD_PASSWORD`, `AUTH_SALT`
+- Auth env vars exist in **Production only**; add them to Preview if preview
+  deploys are ever used.
+- ⚠️ Vercel warns Node 20 builds fail after 2026-10-01 — bump package.json
+  `engines` to `24.x` and verify the build before then.
 
-## Verification (handoff §6)
+## Verification status
 
-Automated so far: production build + typecheck of both app and `/api` pass;
-login/auth guard unit-smoked (wrong pw 401, right pw sets HttpOnly cookie, guard
-accepts/rejects tokens); full UI flow exercised against a mock adapter
-(`scratchpad/mock-server.mjs` pattern) — no Neon access from the dev machine.
+Confirmed on production: login (Google token verification, allowlist accept/
+reject, signed-cookie guard), live data on both site tabs, cross-site history/
+parts/spools/QR lookup, Vancouver floor plan rendering. Remaining spot-checks
+from handoff §6 worth doing casually: analytics numbers vs a local
+`/history/analytics`, poll pause when the tab is backgrounded, offline badge
+within ~2 min of stopping a daemon, moved-printer dedup attribution.
 
-Still to do against the real deployment (`vercel dev` with `DATABASE_URL` set, or
-the deployed URL): §6 items 2–9 — roster matches local Mainsail per site, tab
-switch never leaks printers across sites, moved-printer jobs appear once with
-current-site attribution, analytics spot-check vs local `/history/analytics`,
-poll pause when backgrounded, offline badge within ~2 min of stopping a daemon.
+## Out of scope (unchanged from handoff §7)
+
+Job start/command channel, archive file relay + Archive panel, gcode browser/
+download queue, any mutations from the cloud.
