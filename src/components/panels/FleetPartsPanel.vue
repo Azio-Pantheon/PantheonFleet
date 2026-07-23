@@ -3,14 +3,6 @@
         <v-card-title class="d-flex align-center">
             <span>Parts</span>
             <v-spacer />
-            <v-switch
-                v-if="isFleetCloud"
-                v-model="allSites"
-                label="All sites"
-                dense
-                hide-details
-                class="mt-0 mr-4"
-                @change="applyFilters" />
             <v-btn v-if="!isFleetReadonly" small color="primary" outlined @click="enterAddPartMode" class="mr-2" title="Add Part Mode">
                 <v-icon small left>{{ mdiPackageVariantClosed }}</v-icon>
                 Add Part
@@ -152,7 +144,7 @@
 
             <!-- Site (cloud all-sites view; display_site of the dedup view) -->
             <template #item.site="{ item }">
-                <v-chip x-small outlined>{{ item.site || '—' }}</v-chip>
+                <v-chip x-small outlined>{{ item.site ? siteLabel(item.site) : '—' }}</v-chip>
             </template>
 
             <!-- Start time -->
@@ -973,20 +965,16 @@
 
 <script lang="ts">
 import Component from 'vue-class-component'
-import { Mixins, Watch } from 'vue-property-decorator'
+import { Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import { FleetHistoryRecord } from '@/store/fleet/history/types'
+import { siteLabel } from '@/store/cloud/types'
 import { mdiCog, mdiQrcodeScan, mdiBug, mdiClose, mdiAccountCheck, mdiDelete, mdiCamera, mdiDownload, mdiPackageVariantClosed, mdiPrinter3d, mdiCheckCircle, mdiAlertCircle, mdiMagnify, mdiArrowLeft } from '@mdi/js'
 import axios from 'axios'
 
 @Component
 export default class FleetPartsPanel extends Mixins(BaseMixin) {
-    allSites = false
-
-    @Watch('cloudActiveSite')
-    onCloudSiteChanged() {
-        if (!this.allSites) this.applyFilters()
-    }
+    siteLabel = siteLabel
 
     mdiCog = mdiCog
     mdiQrcodeScan = mdiQrcodeScan
@@ -1117,7 +1105,7 @@ export default class FleetPartsPanel extends Mixins(BaseMixin) {
 
     get allHeaders() {
         let headers = this.devMode ? [...this.baseHeaders, ...this.devHeaders] : [...this.baseHeaders]
-        if (this.isFleetCloud && this.allSites) {
+        if (this.isFleetCloud) {
             headers = [{ text: 'Site', value: 'site', sortable: true }, ...headers]
         }
         return headers
@@ -1252,7 +1240,7 @@ export default class FleetPartsPanel extends Mixins(BaseMixin) {
         if (this.filterPrinter) params.set('printer', this.filterPrinter)
         if (this.devMode && this.filterQcStatus) params.set('qc_status', this.filterQcStatus)
         if (this.devMode && this.filterFilename) params.set('filename', this.filterFilename)
-        if (this.allSites) params.set('site', 'all')
+        if (this.isFleetCloud) params.set('site', 'all')
         params.set('has_qr_code', 'true')
         params.set('limit', '200')
         this.localLoading = true
@@ -1275,7 +1263,7 @@ export default class FleetPartsPanel extends Mixins(BaseMixin) {
         if (this.filterPrinter) params.set('printer', this.filterPrinter)
         if (this.devMode && this.filterQcStatus) params.set('qc_status', this.filterQcStatus)
         if (this.devMode && this.filterFilename) params.set('filename', this.filterFilename)
-        if (this.allSites) params.set('site', 'all')
+        if (this.isFleetCloud) params.set('site', 'all')
         params.set('has_qr_code', 'true')
         params.set('limit', '200')
         params.set('offset', String(this.localRecords.length))

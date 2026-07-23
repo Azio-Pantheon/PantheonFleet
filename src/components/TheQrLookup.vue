@@ -55,7 +55,7 @@
                         <v-simple-table dense>
                             <tbody>
                                 <tr><td class="font-weight-bold" width="120">QR Code</td><td>{{ partResult.qr_code }}</td></tr>
-                                <tr v-if="isFleetCloud"><td class="font-weight-bold">Site</td><td><v-chip x-small outlined>{{ partResult.site || '—' }}</v-chip></td></tr>
+                                <tr v-if="isFleetCloud"><td class="font-weight-bold">Site</td><td><v-chip x-small outlined>{{ partResult.site ? siteLabel(partResult.site) : '—' }}</v-chip></td></tr>
                                 <tr><td class="font-weight-bold">Printer</td><td>{{ partResult.printer_hostname }}</td></tr>
                                 <tr><td class="font-weight-bold">Model</td><td>{{ partResult.printer_model || '—' }}</td></tr>
                                 <tr><td class="font-weight-bold">Filename</td><td>{{ partResult.filename || '—' }}</td></tr>
@@ -121,6 +121,7 @@ import Component from 'vue-class-component'
 import { Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import { mdiMagnifyScan, mdiMagnify, mdiCamera, mdiClose } from '@mdi/js'
+import { siteLabel } from '@/store/cloud/types'
 import axios from 'axios'
 
 /**
@@ -130,6 +131,7 @@ import axios from 'axios'
  */
 @Component
 export default class TheQrLookup extends Mixins(BaseMixin) {
+    siteLabel = siteLabel
     mdiMagnifyScan = mdiMagnifyScan
     mdiMagnify = mdiMagnify
     mdiCamera = mdiCamera

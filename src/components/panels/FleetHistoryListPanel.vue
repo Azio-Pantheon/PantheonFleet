@@ -3,14 +3,6 @@
         <v-card-title class="d-flex align-center">
             <span>Print Jobs</span>
             <v-spacer />
-            <v-switch
-                v-if="isFleetCloud"
-                v-model="allSites"
-                label="All sites"
-                dense
-                hide-details
-                class="mt-0 mr-4"
-                @change="applyFilters" />
             <v-btn v-if="devMode && !isFleetReadonly" small color="primary" :loading="collecting" @click="collectNow" class="mr-2">
                 Collect Now
             </v-btn>
@@ -116,7 +108,7 @@
 
             <!-- Site (cloud all-sites view; display_site of the dedup view) -->
             <template #item.site="{ item }">
-                <v-chip x-small outlined>{{ item.site || '—' }}</v-chip>
+                <v-chip x-small outlined>{{ item.site ? siteLabel(item.site) : '—' }}</v-chip>
             </template>
 
             <!-- Status chip -->
@@ -392,21 +384,17 @@
 
 <script lang="ts">
 import Component from 'vue-class-component'
-import { Mixins, Watch } from 'vue-property-decorator'
+import { Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import { FleetHistoryRecord } from '@/store/fleet/history/types'
+import { siteLabel } from '@/store/cloud/types'
 import { mdiCog, mdiBug, mdiPlus, mdiClose, mdiDownload } from '@mdi/js'
 import axios from 'axios'
 import { fleetDaemonEvents } from '@/plugins/fleetDaemonClient'
 
 @Component
 export default class FleetHistoryListPanel extends Mixins(BaseMixin) {
-    allSites = false
-
-    @Watch('cloudActiveSite')
-    onCloudSiteChanged() {
-        if (!this.allSites) this.applyFilters()
-    }
+    siteLabel = siteLabel
 
     mdiCog = mdiCog
     mdiBug = mdiBug
@@ -523,7 +511,7 @@ export default class FleetHistoryListPanel extends Mixins(BaseMixin) {
 
     get allHeaders() {
         let headers = this.devMode ? [...this.baseHeaders, ...this.devHeaders] : [...this.baseHeaders]
-        if (this.isFleetCloud && this.allSites) {
+        if (this.isFleetCloud) {
             headers = [{ text: 'Site', value: 'site', sortable: true }, ...headers]
         }
         return headers
@@ -621,7 +609,7 @@ export default class FleetHistoryListPanel extends Mixins(BaseMixin) {
             filename: this.devMode ? (this.filterFilename || undefined) : undefined,
             printer_model: this.devMode ? (this.filterModel || undefined) : undefined,
             has_qr_code: false,
-            site: this.allSites ? 'all' : undefined,
+            site: this.isFleetCloud ? 'all' : undefined,
             limit: 200,
         })
     }
@@ -645,7 +633,7 @@ export default class FleetHistoryListPanel extends Mixins(BaseMixin) {
                 filename: this.devMode ? (this.filterFilename || undefined) : undefined,
                 printer_model: this.devMode ? (this.filterModel || undefined) : undefined,
                 has_qr_code: false,
-                site: this.allSites ? 'all' : undefined,
+                site: this.isFleetCloud ? 'all' : undefined,
                 limit: 200,
                 offset: this.records.length,
             })

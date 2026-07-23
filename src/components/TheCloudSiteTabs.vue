@@ -3,15 +3,14 @@
         <v-btn
             v-for="s in sites"
             :key="s.site"
-            small
+            text
             tile
-            :color="s.site === cloudActiveSite ? 'primary' : undefined"
-            :text="s.site !== cloudActiveSite"
-            :title="s.online ? s.site + ' — online' : s.site + ' — offline'"
-            class="text-none px-3 site-tab-btn"
+            class="text-none px-4 site-tab-btn"
+            :class="{ 'site-tab-active': s.site === cloudActiveSite }"
+            :title="siteLabel(s.site) + (s.online ? ' — online' : ' — offline')"
             @click="switchSite(s.site)">
             <v-badge :color="s.online ? 'success' : 'error'" dot inline left>
-                <span class="site-tab-label">{{ s.site }}</span>
+                <span class="site-tab-label">{{ siteLabel(s.site) }}</span>
             </v-badge>
         </v-btn>
     </div>
@@ -20,12 +19,14 @@
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
-import { CloudSite } from '@/store/cloud/types'
+import { CloudSite, siteLabel } from '@/store/cloud/types'
 
 /** Site switcher for the cloud deployment. Each tab shows that site's own
  *  maps + panels; the farm store only ever holds the active site. */
 @Component
 export default class TheCloudSiteTabs extends Mixins(BaseMixin) {
+    siteLabel = siteLabel
+
     get sites(): CloudSite[] {
         return this.$store.state.cloud?.sites ?? []
     }
@@ -38,8 +39,23 @@ export default class TheCloudSiteTabs extends Mixins(BaseMixin) {
 </script>
 
 <style scoped>
+.site-tabs {
+    align-self: stretch;
+}
 .site-tab-btn {
     height: 100% !important;
+    opacity: 0.6;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+}
+.site-tab-btn::before {
+    background-color: transparent;
+}
+/* active tab: underline + full-strength label, no filled box */
+.site-tab-active {
+    opacity: 1;
+    border-bottom: 2px solid var(--v-primary-base) !important;
+    color: var(--v-primary-base);
 }
 .site-tab-label {
     font-weight: 700;
