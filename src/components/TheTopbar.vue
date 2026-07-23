@@ -51,6 +51,7 @@
                 <span class="d-none d-md-inline">{{ $t('App.TopBar.UploadPrint') }}</span>
             </v-btn>
 
+            <the-qr-lookup />
             <v-btn
                 v-if="!isFleetReadonly"
                 tile
@@ -118,6 +119,7 @@ import PrinterSelector from '@/components/ui/PrinterSelector.vue'
 import PantheonLogo from '@/components/ui/PantheonLogo.vue'
 import TheNotificationMenu from '@/components/notifications/TheNotificationMenu.vue'
 import TheCloudSiteTabs from '@/components/TheCloudSiteTabs.vue'
+import TheQrLookup from '@/components/TheQrLookup.vue'
 import { topbarHeight } from '@/store/variables'
 import { mdiAlertOctagonOutline, mdiContentSave, mdiFileUpload, mdiClose, mdiCloseThick, mdiQrcodeScan, mdiPrinter3dNozzle, mdiPackageVariantClosed } from '@mdi/js'
 import EmergencyStopDialog from '@/components/dialogs/EmergencyStopDialog.vue'
@@ -141,6 +143,7 @@ type uploadSnackbar = {
         PantheonLogo,
         TheNotificationMenu,
         TheCloudSiteTabs,
+        TheQrLookup,
     },
 })
 export default class TheTopbar extends Mixins(BaseMixin) {
