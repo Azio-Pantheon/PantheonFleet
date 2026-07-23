@@ -3,7 +3,7 @@
         <v-card-title class="d-flex align-center">
             <span>Vendors</span>
             <v-spacer />
-            <v-btn small color="primary" outlined @click="openAddDialog">
+            <v-btn v-if="!isFleetReadonly" small color="primary" outlined @click="openAddDialog">
                 <v-icon small left>{{ mdiPlus }}</v-icon> Add Vendor
             </v-btn>
         </v-card-title>
@@ -66,13 +66,14 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
+import { Mixins } from 'vue-property-decorator'
+import BaseMixin from '@/components/mixins/base'
 import { mdiPlus, mdiPencil, mdiDelete } from '@mdi/js'
 import { FleetVendor } from '@/store/fleet/spools/types'
 
 @Component
-export default class VendorListPanel extends Vue {
+export default class VendorListPanel extends Mixins(BaseMixin) {
     mdiPlus = mdiPlus
     mdiPencil = mdiPencil
     mdiDelete = mdiDelete
@@ -89,13 +90,16 @@ export default class VendorListPanel extends Vue {
     snackbarText = ''
     snackbarColor = 'success'
 
-    headers = [
-        { text: 'ID', value: 'id', width: 70 },
-        { text: 'Name', value: 'name' },
-        { text: 'Comment', value: 'comment' },
-        { text: 'Registered', value: 'registered', width: 160 },
-        { text: 'Actions', value: 'actions', sortable: false, width: 100 },
-    ]
+    get headers() {
+        const headers = [
+            { text: 'ID', value: 'id', width: 70 },
+            { text: 'Name', value: 'name' },
+            { text: 'Comment', value: 'comment' },
+            { text: 'Registered', value: 'registered', width: 160 },
+            { text: 'Actions', value: 'actions', sortable: false, width: 100 },
+        ]
+        return this.isFleetReadonly ? headers.filter((h) => h.value !== 'actions') : headers
+    }
 
     get vendors(): FleetVendor[] {
         return this.$store.getters['fleet/spools/getVendors']

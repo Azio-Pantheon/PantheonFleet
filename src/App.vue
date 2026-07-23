@@ -1,6 +1,11 @@
 <template>
     <v-app :style="cssVars">
-        <template v-if="socketIsConnected && guiIsReady">
+        <template v-if="isLoginPage">
+            <v-main id="content">
+                <router-view />
+            </v-main>
+        </template>
+        <template v-else-if="socketIsConnected && guiIsReady">
             <the-sidebar />
             <the-topbar />
             <v-main id="content" :style="mainStyle">
@@ -86,6 +91,10 @@ export default class App extends Mixins(BaseMixin, ThemeMixin) {
 
     get title(): string {
         return this.$store.getters['getTitle']
+    }
+
+    get isLoginPage(): boolean {
+        return this.$route.path === '/login'
     }
 
     get mainBackground(): string {

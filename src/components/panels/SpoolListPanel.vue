@@ -13,14 +13,14 @@
                 clearable
                 @keydown.enter="lookupQr"
                 @click:clear="qrResult = null; qrError = ''" />
-            <v-btn small color="primary" outlined class="mr-2" @click="openAddDialog">
+            <v-btn v-if="!isFleetReadonly" small color="primary" outlined class="mr-2" @click="openAddDialog">
                 <v-icon small left>{{ mdiPlus }}</v-icon> Add Spool
             </v-btn>
-            <v-btn small color="primary" class="mr-2" @click="enterAddSpoolMode" title="Add Spool Mode (scan QR codes)">
+            <v-btn v-if="!isFleetReadonly" small color="primary" class="mr-2" @click="enterAddSpoolMode" title="Add Spool Mode (scan QR codes)">
                 <v-icon small left>{{ mdiQrcodeScan }}</v-icon> Add Spool Mode
             </v-btn>
             <!-- Dev mode toggle -->
-            <v-btn small :color="devMode ? 'orange' : 'grey'" :outlined="!devMode" @click="devMode = !devMode" class="mr-2" title="Toggle dev mode">
+            <v-btn v-if="!isFleetReadonly" small :color="devMode ? 'orange' : 'grey'" :outlined="!devMode" @click="devMode = !devMode" class="mr-2" title="Toggle dev mode">
                 <v-icon small left>{{ mdiBug }}</v-icon>
                 Dev
             </v-btn>
@@ -491,14 +491,15 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
+import { Mixins } from 'vue-property-decorator'
+import BaseMixin from '@/components/mixins/base'
 import { mdiPlus, mdiPencil, mdiArchive, mdiDelete, mdiBug, mdiCog, mdiClose, mdiQrcodeScan } from '@mdi/js'
 import { FleetSpool, FleetFilament, FleetVendor } from '@/store/fleet/spools/types'
 import { fleetDaemonEvents } from '@/plugins/fleetDaemonClient'
 
 @Component
-export default class SpoolListPanel extends Vue {
+export default class SpoolListPanel extends Mixins(BaseMixin) {
     mdiPlus = mdiPlus
     mdiPencil = mdiPencil
     mdiArchive = mdiArchive
@@ -638,7 +639,10 @@ export default class SpoolListPanel extends Vue {
     // --- Computed ---
 
     get allHeaders() {
-        return this.devMode ? [...this.baseHeaders, ...this.devHeaders] : this.baseHeaders
+        let headers = this.devMode ? [...this.baseHeaders, ...this.devHeaders] : [...this.baseHeaders]
+        // display-only in read-only mode: no edit/archive/QR/destroy actions
+        if (this.isFleetReadonly) headers = headers.filter((h) => !['actions', 'dev_actions'].includes(h.value))
+        return headers
     }
 
     get devColumnValues(): string[] {
@@ -994,6 +998,7 @@ export default class SpoolListPanel extends Vue {
     }
 
     enterAddSpoolMode() {
+        if (this.isFleetReadonly) return
         this.addSpoolMode = true
         this.addSpoolForm = this.emptyAddSpoolForm()
         this.addSpoolScanBuffer = ''

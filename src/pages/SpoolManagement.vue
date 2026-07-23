@@ -26,9 +26,9 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
-import { Watch } from 'vue-property-decorator'
+import { Mixins, Watch } from 'vue-property-decorator'
+import BaseMixin from '@/components/mixins/base'
 import SpoolListPanel from '@/components/panels/SpoolListPanel.vue'
 import FilamentListPanel from '@/components/panels/FilamentListPanel.vue'
 import VendorListPanel from '@/components/panels/VendorListPanel.vue'
@@ -40,11 +40,21 @@ import VendorListPanel from '@/components/panels/VendorListPanel.vue'
         VendorListPanel,
     },
 })
-export default class SpoolManagement extends Vue {
+export default class SpoolManagement extends Mixins(BaseMixin) {
     activeTab = 0
     loadError = ''
 
     async mounted() {
+        await this.loadAll()
+        this.checkAddSpoolMode()
+    }
+
+    @Watch('cloudActiveSite')
+    onCloudSiteChanged() {
+        this.loadAll()
+    }
+
+    async loadAll() {
         const errors: string[] = []
         await Promise.allSettled([
             this.$store.dispatch('fleet/spools/loadVendors').catch((e: Error) => errors.push(e.message)),
@@ -55,7 +65,6 @@ export default class SpoolManagement extends Vue {
             const unique = [...new Set(errors)]
             this.loadError = unique.join(' | ')
         }
-        this.checkAddSpoolMode()
     }
 
     @Watch('$route')

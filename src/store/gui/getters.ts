@@ -2,6 +2,7 @@ import { GetterTree } from 'vuex'
 import { GuiState } from '@/store/gui/types'
 import { GuiMacrosStateMacrogroup } from '@/store/gui/macros/types'
 import { allDashboardPanels } from '@/store/variables'
+import { isFleetCloud } from '@/plugins/cloudMode'
 
 // eslint-disable-next-line
 export const getters: GetterTree<GuiState, any> = {
@@ -163,5 +164,8 @@ export const getters: GetterTree<GuiState, any> = {
         return false
     },
 
-    fleetDaemonUrl: (state) => state.fleetDaemonUrl ?? 'http://pantheonfleet.local:8090',
+    // In cloud mode every fleet read goes through the same-origin Neon adapter,
+    // whose routes mirror the fleet_daemon paths — so the existing fleet store
+    // actions work unchanged against '/api'.
+    fleetDaemonUrl: (state) => (isFleetCloud ? '/api' : state.fleetDaemonUrl ?? 'http://pantheonfleet.local:8090'),
 }

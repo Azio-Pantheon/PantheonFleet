@@ -6,8 +6,8 @@
             <span class="section-pill">{{ printerCount }}</span>
         </div>
 
-        <!-- Controls -->
-        <div class="map-controls mb-2">
+        <!-- Controls (map editing + add printer are write surfaces — hidden read-only) -->
+        <div v-if="!isFleetReadonly" class="map-controls mb-2">
             <v-btn small :color="isEditing ? 'success' : undefined" :class="{ 'save-pulse': isEditing }"
                    @click="toggleEditMode">
                 {{ isEditing ? 'Save' : 'Edit' }}
@@ -40,6 +40,7 @@
             <div ref="canvas" class="grid-canvas" :style="canvasStyle">
                 <!-- Background markings (outside the grid, in the margin) -->
                 <template v-if="location === 'farm'">
+                    <div v-if="floorPlanStyle" class="floor-plan" :style="floorPlanStyle"></div>
                     <div v-for="(d, i) in farmDividers" :key="'fd-' + i" class="area-divider" :style="d"></div>
                     <span v-for="(l, i) in farmLabels" :key="'fl-' + i" class="area-label" :style="l.style">{{ l.text }}</span>
                 </template>
@@ -50,9 +51,11 @@
                     <span v-for="(l, i) in groundLabels" :key="'gl-' + i" class="area-label" :style="l.style">{{ l.text }}</span>
                 </template>
 
-                <!-- Bay door: thickened right-border segment (rows 5-9), both locations -->
-                <div class="bay-door" :style="bayDoorStyle"></div>
-                <span class="area-label" :style="bayDoorLabelStyle">Bay Door</span>
+                <!-- Bay door: thickened right-border segment, both locations -->
+                <template v-if="geometry.bayDoor">
+                    <div class="bay-door" :style="bayDoorStyle"></div>
+                    <span class="area-label" :style="bayDoorLabelStyle">Bay Door</span>
+                </template>
 
                 <!-- Grid lines -->
                 <div class="grid-lines" :style="gridLinesStyle"></div>
@@ -118,6 +121,7 @@ import {
     PrinterStatus,
 } from '@/components/panels/farmPrinterStatus'
 import { PrinterModel, SQUARE_PRINTER_MODELS, PRINTER_MODEL_HEIGHT_SCALE } from '@/store/gui/remoteprinters/types'
+import { FarmMapGeometry, geometryForSite, localSiteId } from '@/components/panels/farmMapGeometry'
 
 type MapLocation = 'farm' | 'ground'
 
@@ -131,10 +135,24 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     @Prop({ type: String, required: true }) readonly location!: MapLocation
     @Prop({ type: String, required: true }) readonly name!: string
 
-    // Grid geometry
-    readonly GRID_COLS = 25
-    readonly GRID_ROWS = 12
+    // Grid geometry — per-site (site tabs in cloud mode; VUE_APP_FLEET_SITE locally)
     readonly CELL = 46
+
+    get activeMapSite(): string {
+        return this.isFleetCloud ? this.cloudActiveSite : localSiteId()
+    }
+
+    get geometry(): FarmMapGeometry {
+        return geometryForSite(this.activeMapSite)
+    }
+
+    get GRID_COLS(): number {
+        return this.geometry.gridCols
+    }
+
+    get GRID_ROWS(): number {
+        return this.geometry.gridRows
+    }
 
     // Status color/label vocabulary (matches farmPrinterStatus + FarmPrinterGridPanel)
     readonly STATUS_META: Record<PrinterStatus, { color: string; label: string }> = {
@@ -333,10 +351,21 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
         }
     }
 
-    // ---------- background markings ----------
+    // ---------- background markings (all driven by the per-site geometry) ----------
+    get floorPlanStyle(): Record<string, string> | null {
+        if (this.location !== 'farm' || !this.geometry.floorPlanImage) return null
+        return {
+            left: this.pad + 'px',
+            top: this.pad + 'px',
+            width: this.gridW + 'px',
+            height: this.gridH + 'px',
+            backgroundImage: `url(${this.geometry.floorPlanImage})`,
+        }
+    }
+
     get farmDividers() {
         // thick separators: after Post Processing (col 1) + each aisle boundary
-        return [1, 5, 9, 13, 17, 21].map((c) => ({
+        return this.geometry.farmDividerCols.map((c) => ({
             left: this.pad + c * this.CELL + 'px',
             top: this.pad + 'px',
             height: this.gridH + 'px',
@@ -344,39 +373,46 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     }
 
     get farmLabels() {
+        const g = this.geometry
         const labels: { text: string; style: Record<string, string> }[] = []
-        labels.push({
-            text: 'Post Processing',
-            style: { left: '5px', top: this.pad + this.gridH / 2 + 'px', transform: 'translateY(-50%) rotate(180deg)', writingMode: 'vertical-rl', fontSize: '11px' },
-        })
-        for (let i = 0; i < 6; i++) {
-            const startCol = 2 + i * 4
+        if (g.farmLeftLabel) {
             labels.push({
-                text: 'Isle ' + (i + 1),
-                style: { left: this.pad + (startCol + 1) * this.CELL + 'px', top: '5px', transform: 'translateX(-50%)', fontSize: '11px' },
+                text: g.farmLeftLabel,
+                style: { left: '5px', top: this.pad + this.gridH / 2 + 'px', transform: 'translateY(-50%) rotate(180deg)', writingMode: 'vertical-rl', fontSize: '11px' },
             })
         }
-        labels.push({
-            text: 'Farm Room',
-            style: { left: this.pad + 13 * this.CELL + 'px', bottom: '4px', transform: 'translateX(-50%)', fontSize: '13px', letterSpacing: '.24em' },
-        })
+        if (g.aisles) {
+            for (let i = 0; i < g.aisles.count; i++) {
+                const startCol = g.aisles.firstCol + i * g.aisles.widthCols
+                labels.push({
+                    text: 'Isle ' + (i + 1),
+                    style: { left: this.pad + (startCol + 1) * this.CELL + 'px', top: '5px', transform: 'translateX(-50%)', fontSize: '11px' },
+                })
+            }
+        }
+        if (g.farmBottomLabel) {
+            labels.push({
+                text: g.farmBottomLabel,
+                style: { left: this.pad + Math.round(this.GRID_COLS / 2) * this.CELL + 'px', bottom: '4px', transform: 'translateX(-50%)', fontSize: '13px', letterSpacing: '.24em' },
+            })
+        }
         return labels
     }
 
-    // Bay door: on the right border of the grid, spanning these rows (inclusive)
-    readonly BAY_DOOR_START_ROW = 5
-    readonly BAY_DOOR_END_ROW = 9
-
     get bayDoorStyle() {
+        const door = this.geometry.bayDoor
+        if (!door) return {}
         return {
             left: this.pad + this.gridW + 'px',
-            top: this.pad + (this.BAY_DOOR_START_ROW - 1) * this.CELL + 'px',
-            height: (this.BAY_DOOR_END_ROW - this.BAY_DOOR_START_ROW + 1) * this.CELL + 'px',
+            top: this.pad + (door.startRow - 1) * this.CELL + 'px',
+            height: (door.endRow - door.startRow + 1) * this.CELL + 'px',
         }
     }
 
     get bayDoorLabelStyle() {
-        const centerY = this.pad + ((this.BAY_DOOR_START_ROW - 1 + this.BAY_DOOR_END_ROW) / 2) * this.CELL
+        const door = this.geometry.bayDoor
+        if (!door) return {}
+        const centerY = this.pad + ((door.startRow - 1 + door.endRow) / 2) * this.CELL
         return {
             right: '2px',
             top: centerY + 'px',
@@ -386,15 +422,8 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
         }
     }
 
-    // Ground floor: 3 areas in grid-cell units
-    readonly GROUND_ROOMS = [
-        { name: 'Production', gx: 1, gy: 1, wc: 3, hc: 12, side: 'left' },
-        { name: 'R&D', gx: 4, gy: 1, wc: 22, hc: 9, side: 'top' },
-        { name: 'Fulfilment', gx: 4, gy: 10, wc: 22, hc: 3, side: 'bottom' },
-    ]
-
     get groundRooms() {
-        return this.GROUND_ROOMS.map((r) => ({
+        return this.geometry.groundRooms.map((r) => ({
             left: (r.gx - 1) * this.CELL + 'px',
             top: (r.gy - 1) * this.CELL + 'px',
             width: r.wc * this.CELL + 'px',
@@ -403,7 +432,7 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     }
 
     get groundLabels() {
-        return this.GROUND_ROOMS.map((r) => {
+        return this.geometry.groundRooms.map((r) => {
             const cx = this.pad + (r.gx - 1 + r.wc / 2) * this.CELL
             const cy = this.pad + (r.gy - 1 + r.hc / 2) * this.CELL
             let style: Record<string, string>
@@ -631,6 +660,14 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
 }
 .rooms-wrap {
     position: absolute;
+    pointer-events: none;
+    z-index: 0;
+}
+.floor-plan {
+    position: absolute;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    opacity: 0.85;
     pointer-events: none;
     z-index: 0;
 }

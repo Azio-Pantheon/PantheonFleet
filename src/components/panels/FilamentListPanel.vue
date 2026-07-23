@@ -3,7 +3,7 @@
         <v-card-title class="d-flex align-center">
             <span>Filaments</span>
             <v-spacer />
-            <v-btn small color="primary" outlined @click="openAddDialog">
+            <v-btn v-if="!isFleetReadonly" small color="primary" outlined @click="openAddDialog">
                 <v-icon small left>{{ mdiPlus }}</v-icon> Add Filament
             </v-btn>
         </v-card-title>
@@ -144,13 +144,14 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
+import { Mixins } from 'vue-property-decorator'
+import BaseMixin from '@/components/mixins/base'
 import { mdiPlus, mdiPencil, mdiDelete } from '@mdi/js'
 import { FleetFilament, FleetVendor } from '@/store/fleet/spools/types'
 
 @Component
-export default class FilamentListPanel extends Vue {
+export default class FilamentListPanel extends Mixins(BaseMixin) {
     mdiPlus = mdiPlus
     mdiPencil = mdiPencil
     mdiDelete = mdiDelete
@@ -170,18 +171,21 @@ export default class FilamentListPanel extends Vue {
     snackbarText = ''
     snackbarColor = 'success'
 
-    headers = [
-        { text: 'ID', value: 'id', width: 60 },
-        { text: 'Color', value: 'color_hex', width: 60, sortable: false },
-        { text: 'Vendor', value: 'vendor_name' },
-        { text: 'Name', value: 'name' },
-        { text: 'Material', value: 'material' },
-        { text: 'Density', value: 'density', width: 110 },
-        { text: 'Diameter', value: 'diameter', width: 100 },
-        { text: 'Net Weight', value: 'weight', width: 110 },
-        { text: 'Registered', value: 'registered', width: 130 },
-        { text: 'Actions', value: 'actions', sortable: false, width: 100 },
-    ]
+    get headers() {
+        const headers = [
+            { text: 'ID', value: 'id', width: 60 },
+            { text: 'Color', value: 'color_hex', width: 60, sortable: false },
+            { text: 'Vendor', value: 'vendor_name' },
+            { text: 'Name', value: 'name' },
+            { text: 'Material', value: 'material' },
+            { text: 'Density', value: 'density', width: 110 },
+            { text: 'Diameter', value: 'diameter', width: 100 },
+            { text: 'Net Weight', value: 'weight', width: 110 },
+            { text: 'Registered', value: 'registered', width: 130 },
+            { text: 'Actions', value: 'actions', sortable: false, width: 100 },
+        ]
+        return this.isFleetReadonly ? headers.filter((h) => h.value !== 'actions') : headers
+    }
 
     get filaments(): FleetFilament[] {
         return this.$store.getters['fleet/spools/getFilaments']

@@ -3,17 +3,20 @@
         <v-card v-if="!form.bool" flat>
             <v-card-text>
                 <h3 class="text-h5 mb-3">{{ $t('Settings.RemotePrintersTab.RemotePrinters') }}</h3>
-                <settings-row :title="'Fleet Daemon URL'">
-                    <v-text-field
-                        v-model="fleetDaemonUrlInput"
-                        placeholder="http://pantheonfleet.local:8090"
-                        hide-details="auto"
-                        dense
-                        outlined
-                        @blur="saveFleetDaemonUrl"
-                        @keyup.enter="saveFleetDaemonUrl"></v-text-field>
-                </settings-row>
-                <v-divider class="my-2"></v-divider>
+                <!-- irrelevant in cloud mode: the adapter is same-origin /api -->
+                <template v-if="!isFleetCloud">
+                    <settings-row :title="'Fleet Daemon URL'">
+                        <v-text-field
+                            v-model="fleetDaemonUrlInput"
+                            placeholder="http://pantheonfleet.local:8090"
+                            hide-details="auto"
+                            dense
+                            outlined
+                            @blur="saveFleetDaemonUrl"
+                            @keyup.enter="saveFleetDaemonUrl"></v-text-field>
+                    </settings-row>
+                    <v-divider class="my-2"></v-divider>
+                </template>
                 <v-alert v-if="!canAddPrinters" :icon="mdiAlertOutline" type="warning" text>
                     {{ $t('Settings.RemotePrintersTab.UseConfigJson') }}
                 </v-alert>
@@ -22,23 +25,25 @@
                     <settings-row
                         :title="formatPrinterName(printer)"
                         :sub-title="locationLabel(printer.location)">
-                        <v-btn small outlined :disabled="!canAddPrinters" @click="editPrinter(printer)">
-                            <v-icon left small>{{ mdiPencil }}</v-icon>
-                            {{ $t('Settings.Edit') }}
-                        </v-btn>
-                        <v-btn
-                            small
-                            outlined
-                            class="ml-3 minwidth-0 px-2"
-                            color="error"
-                            :disabled="!canAddPrinters"
-                            @click="delPrinter(printer.id)">
-                            <v-icon small>{{ mdiDelete }}</v-icon>
-                        </v-btn>
+                        <template v-if="!isFleetReadonly">
+                            <v-btn small outlined :disabled="!canAddPrinters" @click="editPrinter(printer)">
+                                <v-icon left small>{{ mdiPencil }}</v-icon>
+                                {{ $t('Settings.Edit') }}
+                            </v-btn>
+                            <v-btn
+                                small
+                                outlined
+                                class="ml-3 minwidth-0 px-2"
+                                color="error"
+                                :disabled="!canAddPrinters"
+                                @click="delPrinter(printer.id)">
+                                <v-icon small>{{ mdiDelete }}</v-icon>
+                            </v-btn>
+                        </template>
                     </settings-row>
                 </div>
             </v-card-text>
-            <v-card-actions class="d-flex justify-end">
+            <v-card-actions v-if="!isFleetReadonly" class="d-flex justify-end">
                 <v-btn text color="primary" :disabled="!canAddPrinters" @click="createPrinter">
                     {{ $t('Settings.RemotePrintersTab.AddPrinter') }}
                 </v-btn>

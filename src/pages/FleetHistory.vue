@@ -15,7 +15,8 @@
             <v-tab>Jobs</v-tab>
             <v-tab>Parts</v-tab>
             <v-tab>Analytics</v-tab>
-            <v-tab>Archive</v-tab>
+            <!-- Archive hidden in cloud v1: file bytes live on the site NASes -->
+            <v-tab v-if="!isFleetCloud">Archive</v-tab>
         </v-tabs>
 
         <v-tabs-items v-model="activeTab" touchless>
@@ -28,7 +29,7 @@
             <v-tab-item>
                 <fleet-analytics-panel />
             </v-tab-item>
-            <v-tab-item eager>
+            <v-tab-item v-if="!isFleetCloud" eager>
                 <fleet-archive-panel />
             </v-tab-item>
         </v-tabs-items>
@@ -36,10 +37,10 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
-import { Watch } from 'vue-property-decorator'
+import { Mixins, Watch } from 'vue-property-decorator'
 import { Route } from 'vue-router'
+import BaseMixin from '@/components/mixins/base'
 import FleetPrinterStatusPanel from '@/components/panels/FleetPrinterStatusPanel.vue'
 import FleetHistoryListPanel from '@/components/panels/FleetHistoryListPanel.vue'
 import FleetPartsPanel from '@/components/panels/FleetPartsPanel.vue'
@@ -55,13 +56,18 @@ import FleetArchivePanel from '@/components/panels/FleetArchivePanel.vue'
         FleetArchivePanel,
     },
 })
-export default class FleetHistory extends Vue {
+export default class FleetHistory extends Mixins(BaseMixin) {
     activeTab = 0
 
     mounted() {
         this.$store.dispatch('fleet/history/loadAnalytics')
         this.checkQcMode()
         this.checkAddPartMode()
+    }
+
+    @Watch('cloudActiveSite')
+    onCloudSiteChanged() {
+        this.$store.dispatch('fleet/history/loadAnalytics')
     }
 
     @Watch('$route')

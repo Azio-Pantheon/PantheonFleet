@@ -158,6 +158,15 @@ const routes: AppRoute[] = [
         path: '/settings/machine',
         redirect: '/config',
     },
+    {
+        name: 'login',
+        title: null,
+        path: '/login',
+        component: () => import('../pages/CloudLogin.vue'),
+        alwaysShow: false,
+        showInNavi: false,
+        fullscreen: true,
+    },
 ]
 
 export default routes

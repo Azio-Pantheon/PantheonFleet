@@ -3,15 +3,23 @@
         <v-card-title class="d-flex align-center">
             <span>Parts</span>
             <v-spacer />
-            <v-btn small color="primary" outlined @click="enterAddPartMode" class="mr-2" title="Add Part Mode">
+            <v-switch
+                v-if="isFleetCloud"
+                v-model="allSites"
+                label="All sites"
+                dense
+                hide-details
+                class="mt-0 mr-4"
+                @change="applyFilters" />
+            <v-btn v-if="!isFleetReadonly" small color="primary" outlined @click="enterAddPartMode" class="mr-2" title="Add Part Mode">
                 <v-icon small left>{{ mdiPackageVariantClosed }}</v-icon>
                 Add Part
             </v-btn>
-            <v-btn small color="primary" outlined @click="enterQcMode" class="mr-2" title="QC Mode">
+            <v-btn v-if="!isFleetReadonly" small color="primary" outlined @click="enterQcMode" class="mr-2" title="QC Mode">
                 <v-icon small left>{{ mdiQrcodeScan }}</v-icon>
                 QC Mode
             </v-btn>
-            <v-btn small :color="devMode ? 'orange' : 'grey'" :outlined="!devMode" @click="toggleDevMode" class="mr-2" title="Toggle dev mode">
+            <v-btn v-if="!isFleetReadonly" small :color="devMode ? 'orange' : 'grey'" :outlined="!devMode" @click="toggleDevMode" class="mr-2" title="Toggle dev mode">
                 <v-icon small left>{{ mdiBug }}</v-icon>
                 Dev
             </v-btn>
@@ -142,6 +150,11 @@
                 <v-chip x-small :color="statusColor(item.status)" dark>{{ item.status || 'unknown' }}</v-chip>
             </template>
 
+            <!-- Site (cloud all-sites view; display_site of the dedup view) -->
+            <template #item.site="{ item }">
+                <v-chip x-small outlined>{{ item.site || '—' }}</v-chip>
+            </template>
+
             <!-- Start time -->
             <template #item.start_time="{ item }">
                 {{ formatDate(item.start_time) }}
@@ -228,14 +241,14 @@
                 <span v-else>—</span>
             </template>
 
-            <!-- QC note — click to edit -->
+            <!-- QC note — click to edit (display-only when read-only) -->
             <template #item.qc_note="{ item }">
                 <div
                     v-if="editingNoteId !== item.id"
                     class="qc-note-cell"
-                    style="min-width: 120px; cursor: pointer"
-                    :title="item.qc_note || 'Click to add note'"
-                    @click.stop="startEditNote(item)"
+                    :style="{ minWidth: '120px', cursor: isFleetReadonly ? 'default' : 'pointer' }"
+                    :title="item.qc_note || (isFleetReadonly ? '' : 'Click to add note')"
+                    @click.stop="!isFleetReadonly && startEditNote(item)"
                 >
                     {{ item.qc_note || '—' }}
                 </div>
@@ -290,7 +303,7 @@
                             <tr><td class="font-weight-bold">Filename</td><td>
                                 {{ detailJob.filename || '—' }}
                                 <v-btn
-                                    v-if="detailJob.gcode_archive_hash && !detailJob.gcode_archive_hash.startsWith('deleted:')"
+                                    v-if="!isFleetCloud && detailJob.gcode_archive_hash && !detailJob.gcode_archive_hash.startsWith('deleted:')"
                                     x-small icon class="ml-1"
                                     title="Download archived gcode"
                                     @click="downloadArchivedGcode(detailJob)"
@@ -959,14 +972,22 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
+import { Mixins, Watch } from 'vue-property-decorator'
+import BaseMixin from '@/components/mixins/base'
 import { FleetHistoryRecord } from '@/store/fleet/history/types'
 import { mdiCog, mdiQrcodeScan, mdiBug, mdiClose, mdiAccountCheck, mdiDelete, mdiCamera, mdiDownload, mdiPackageVariantClosed, mdiPrinter3d, mdiCheckCircle, mdiAlertCircle, mdiMagnify, mdiArrowLeft } from '@mdi/js'
 import axios from 'axios'
 
 @Component
-export default class FleetPartsPanel extends Vue {
+export default class FleetPartsPanel extends Mixins(BaseMixin) {
+    allSites = false
+
+    @Watch('cloudActiveSite')
+    onCloudSiteChanged() {
+        if (!this.allSites) this.applyFilters()
+    }
+
     mdiCog = mdiCog
     mdiQrcodeScan = mdiQrcodeScan
     mdiBug = mdiBug
@@ -1095,7 +1116,11 @@ export default class FleetPartsPanel extends Vue {
     ]
 
     get allHeaders() {
-        return this.devMode ? [...this.baseHeaders, ...this.devHeaders] : this.baseHeaders
+        let headers = this.devMode ? [...this.baseHeaders, ...this.devHeaders] : [...this.baseHeaders]
+        if (this.isFleetCloud && this.allSites) {
+            headers = [{ text: 'Site', value: 'site', sortable: true }, ...headers]
+        }
+        return headers
     }
 
     get devColumnValues(): string[] {
@@ -1104,7 +1129,7 @@ export default class FleetPartsPanel extends Vue {
 
     get computedHeaders() {
         return this.allHeaders
-            .filter((h) => this.visibleColumns.includes(h.value) || this.devColumnValues.includes(h.value))
+            .filter((h) => this.visibleColumns.includes(h.value) || this.devColumnValues.includes(h.value) || h.value === 'site')
             .map((h) => {
                 const w = this.columnWidths[h.value]
                 return w ? { ...h, width: `${w}px` } : h
@@ -1227,6 +1252,7 @@ export default class FleetPartsPanel extends Vue {
         if (this.filterPrinter) params.set('printer', this.filterPrinter)
         if (this.devMode && this.filterQcStatus) params.set('qc_status', this.filterQcStatus)
         if (this.devMode && this.filterFilename) params.set('filename', this.filterFilename)
+        if (this.allSites) params.set('site', 'all')
         params.set('has_qr_code', 'true')
         params.set('limit', '200')
         this.localLoading = true
@@ -1249,6 +1275,7 @@ export default class FleetPartsPanel extends Vue {
         if (this.filterPrinter) params.set('printer', this.filterPrinter)
         if (this.devMode && this.filterQcStatus) params.set('qc_status', this.filterQcStatus)
         if (this.devMode && this.filterFilename) params.set('filename', this.filterFilename)
+        if (this.allSites) params.set('site', 'all')
         params.set('has_qr_code', 'true')
         params.set('limit', '200')
         params.set('offset', String(this.localRecords.length))
@@ -1365,6 +1392,7 @@ export default class FleetPartsPanel extends Vue {
     // ---- QC Mode ----
 
     async enterQcMode() {
+        if (this.isFleetReadonly) return
         this.qcMode = true
         this.qcStep = 'inspector'
         this.qcInspector = ''
@@ -1532,6 +1560,7 @@ export default class FleetPartsPanel extends Vue {
     // ---- Add Part Mode ----
 
     enterAddPartMode() {
+        if (this.isFleetReadonly) return
         this.addPartMode = true
         this.addPartScanBuffer = ''
         this.addPartSelectedPrinter = ''

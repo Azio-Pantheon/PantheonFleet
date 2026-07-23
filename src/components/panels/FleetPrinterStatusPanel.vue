@@ -5,7 +5,7 @@
             <div class="printer-stats mb-4">
                 <div class="d-flex justify-space-between align-center mb-2">
                     <p class="mb-0 font-weight-medium">Total Printers: {{ Object.keys(fleetDaemonPrinters).length }}</p>
-                    <v-btn icon small @click="reconnectAllFleetPrinters" title="Reconnect All Printers">
+                    <v-btn v-if="!isFleetReadonly" icon small @click="reconnectAllFleetPrinters" title="Reconnect All Printers">
                         <v-icon small>{{ mdiReload }}</v-icon>
                     </v-btn>
                 </div>

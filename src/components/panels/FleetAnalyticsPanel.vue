@@ -366,6 +366,11 @@ export default class FleetAnalyticsPanel extends Mixins(BaseMixin, ThemeMixin) {
         }
     }
 
+    @Watch('cloudActiveSite')
+    onCloudSiteChanged() {
+        this.onHistoryUpdated()
+    }
+
     onDateRangeChange() {
         if (this.analyticsView === 'parts') {
             this.$store.dispatch('fleet/history/loadPartAnalytics', this.analyticsDays)

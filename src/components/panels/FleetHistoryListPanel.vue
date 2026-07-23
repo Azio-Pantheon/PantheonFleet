@@ -3,10 +3,18 @@
         <v-card-title class="d-flex align-center">
             <span>Print Jobs</span>
             <v-spacer />
-            <v-btn v-if="devMode" small color="primary" :loading="collecting" @click="collectNow" class="mr-2">
+            <v-switch
+                v-if="isFleetCloud"
+                v-model="allSites"
+                label="All sites"
+                dense
+                hide-details
+                class="mt-0 mr-4"
+                @change="applyFilters" />
+            <v-btn v-if="devMode && !isFleetReadonly" small color="primary" :loading="collecting" @click="collectNow" class="mr-2">
                 Collect Now
             </v-btn>
-            <v-btn small :color="devMode ? 'orange' : 'grey'" :outlined="!devMode" @click="toggleDevMode" class="mr-2" title="Toggle dev mode">
+            <v-btn v-if="!isFleetReadonly" small :color="devMode ? 'orange' : 'grey'" :outlined="!devMode" @click="toggleDevMode" class="mr-2" title="Toggle dev mode">
                 <v-icon small left>{{ mdiBug }}</v-icon>
                 Dev
             </v-btn>
@@ -104,6 +112,11 @@
             <!-- Printer model -->
             <template #item.printer_model="{ item }">
                 {{ item.printer_model || '—' }}
+            </template>
+
+            <!-- Site (cloud all-sites view; display_site of the dedup view) -->
+            <template #item.site="{ item }">
+                <v-chip x-small outlined>{{ item.site || '—' }}</v-chip>
             </template>
 
             <!-- Status chip -->
@@ -228,7 +241,7 @@
                             <tr><td class="font-weight-bold">Filename</td><td>
                                 {{ detailJob.filename || '—' }}
                                 <v-btn
-                                    v-if="detailJob.gcode_archive_hash && !detailJob.gcode_archive_hash.startsWith('deleted:')"
+                                    v-if="!isFleetCloud && detailJob.gcode_archive_hash && !detailJob.gcode_archive_hash.startsWith('deleted:')"
                                     x-small
                                     icon
                                     class="ml-1"
@@ -249,7 +262,7 @@
                             </td></tr>
                             <tr><td class="font-weight-bold">Telemetry</td><td>
                                 <v-btn
-                                    v-if="detailJob.telemetry_archive_status === 'archived'"
+                                    v-if="!isFleetCloud && detailJob.telemetry_archive_status === 'archived'"
                                     x-small
                                     icon
                                     title="Download per-print telemetry (.jsonl.gz)"
@@ -378,15 +391,23 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue'
 import Component from 'vue-class-component'
+import { Mixins, Watch } from 'vue-property-decorator'
+import BaseMixin from '@/components/mixins/base'
 import { FleetHistoryRecord } from '@/store/fleet/history/types'
 import { mdiCog, mdiBug, mdiPlus, mdiClose, mdiDownload } from '@mdi/js'
 import axios from 'axios'
 import { fleetDaemonEvents } from '@/plugins/fleetDaemonClient'
 
 @Component
-export default class FleetHistoryListPanel extends Vue {
+export default class FleetHistoryListPanel extends Mixins(BaseMixin) {
+    allSites = false
+
+    @Watch('cloudActiveSite')
+    onCloudSiteChanged() {
+        if (!this.allSites) this.applyFilters()
+    }
+
     mdiCog = mdiCog
     mdiBug = mdiBug
     mdiPlus = mdiPlus
@@ -501,7 +522,11 @@ export default class FleetHistoryListPanel extends Vue {
     }
 
     get allHeaders() {
-        return this.devMode ? [...this.baseHeaders, ...this.devHeaders] : this.baseHeaders
+        let headers = this.devMode ? [...this.baseHeaders, ...this.devHeaders] : [...this.baseHeaders]
+        if (this.isFleetCloud && this.allSites) {
+            headers = [{ text: 'Site', value: 'site', sortable: true }, ...headers]
+        }
+        return headers
     }
 
     get devColumnValues(): string[] {
@@ -510,7 +535,7 @@ export default class FleetHistoryListPanel extends Vue {
 
     get headers() {
         return this.allHeaders
-            .filter((h) => this.visibleColumns.includes(h.value) || this.devColumnValues.includes(h.value))
+            .filter((h) => this.visibleColumns.includes(h.value) || this.devColumnValues.includes(h.value) || h.value === 'site')
             .map((h) => {
                 const w = this.columnWidths[h.value]
                 return w ? { ...h, width: `${w}px` } : h
@@ -596,6 +621,7 @@ export default class FleetHistoryListPanel extends Vue {
             filename: this.devMode ? (this.filterFilename || undefined) : undefined,
             printer_model: this.devMode ? (this.filterModel || undefined) : undefined,
             has_qr_code: false,
+            site: this.allSites ? 'all' : undefined,
             limit: 200,
         })
     }
@@ -619,6 +645,7 @@ export default class FleetHistoryListPanel extends Vue {
                 filename: this.devMode ? (this.filterFilename || undefined) : undefined,
                 printer_model: this.devMode ? (this.filterModel || undefined) : undefined,
                 has_qr_code: false,
+                site: this.allSites ? 'all' : undefined,
                 limit: 200,
                 offset: this.records.length,
             })

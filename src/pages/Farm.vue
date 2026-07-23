@@ -18,8 +18,8 @@
         <!-- Print Farm map -->
         <farm-map-section location="farm" name="Print Farm" class="mb-8" />
 
-        <!-- Ground Floor map -->
-        <farm-map-section location="ground" name="Ground Floor" />
+        <!-- Ground Floor map (only for sites that have one) -->
+        <farm-map-section v-if="showGround" location="ground" name="Ground Floor" />
     </div>
 </template>
 
@@ -31,6 +31,7 @@ import {
     getPrinterStatus as getPrinterStatusUtil,
     PrinterStatus,
 } from '@/components/panels/farmPrinterStatus'
+import { geometryForSite, localSiteId } from '@/components/panels/farmMapGeometry'
 
 @Component({
     components: {
@@ -54,6 +55,15 @@ export default class PageFarm extends Mixins(BaseMixin) {
 
     get totalPrinterCount(): number {
         return Object.keys(this.fleetDaemonPrinters).length
+    }
+
+    // Ground Floor section: sites without one (old building) hide it, unless a
+    // printer is actually placed there (so nothing can ever disappear).
+    get showGround(): boolean {
+        const site = this.isFleetCloud ? this.cloudActiveSite : localSiteId()
+        if (geometryForSite(site).hasGround) return true
+        const remotePrinters = this.$store.state.gui?.remoteprinters?.printers || {}
+        return Object.values(remotePrinters).some((p: any) => p.location === 'ground')
     }
 
     getPrinterStatus(printer: any): PrinterStatus {

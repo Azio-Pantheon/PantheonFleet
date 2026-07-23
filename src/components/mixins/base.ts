@@ -2,9 +2,25 @@ import Vue from 'vue'
 import Component from 'vue-class-component'
 import { DateTimeFormatOptions } from 'vue-i18n'
 import { ServerPowerStateDevice } from '@/store/server/power/types'
+import { isFleetCloud, isFleetReadonly } from '@/plugins/cloudMode'
 
 @Component
 export default class BaseMixin extends Vue {
+    /** True on the Vercel cloud deployment (data from the /api Neon adapter). */
+    get isFleetCloud(): boolean {
+        return isFleetCloud
+    }
+
+    /** True when every write surface must be hidden/disabled (cloud is always read-only). */
+    get isFleetReadonly(): boolean {
+        return isFleetReadonly
+    }
+
+    /** Active site id in cloud mode ('' locally). */
+    get cloudActiveSite(): string {
+        return this.$store.state.cloud?.activeSite ?? ''
+    }
+
     get apiUrl(): boolean {
         return this.$store.getters['socket/getUrl']
     }

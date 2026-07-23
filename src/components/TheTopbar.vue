@@ -19,7 +19,8 @@
                 </template>
             </router-link>
             <v-toolbar-title class="text-no-wrap ml-0 pl-2 mr-2">{{ printerName }}</v-toolbar-title>
-            <printer-selector v-if="countPrinters" />
+            <the-cloud-site-tabs />
+            <printer-selector v-if="countPrinters && !isFleetCloud" />
             <v-spacer />
             <input ref="fileUploadAndStart"
                    type="file"
@@ -51,6 +52,7 @@
             </v-btn>
 
             <v-btn
+                v-if="!isFleetReadonly"
                 tile
                 :icon="$vuetify.breakpoint.smAndDown"
                 :text="$vuetify.breakpoint.mdAndUp"
@@ -61,6 +63,7 @@
                 <span class="d-none d-md-inline">QC Mode</span>
             </v-btn>
             <v-btn
+                v-if="!isFleetReadonly"
                 tile
                 :icon="$vuetify.breakpoint.smAndDown"
                 :text="$vuetify.breakpoint.mdAndUp"
@@ -71,6 +74,7 @@
                 <span class="d-none d-md-inline">Add Spool</span>
             </v-btn>
             <v-btn
+                v-if="!isFleetReadonly"
                 tile
                 :icon="$vuetify.breakpoint.smAndDown"
                 :text="$vuetify.breakpoint.mdAndUp"
@@ -113,6 +117,7 @@ import Panel from '@/components/ui/Panel.vue'
 import PrinterSelector from '@/components/ui/PrinterSelector.vue'
 import PantheonLogo from '@/components/ui/PantheonLogo.vue'
 import TheNotificationMenu from '@/components/notifications/TheNotificationMenu.vue'
+import TheCloudSiteTabs from '@/components/TheCloudSiteTabs.vue'
 import { topbarHeight } from '@/store/variables'
 import { mdiAlertOctagonOutline, mdiContentSave, mdiFileUpload, mdiClose, mdiCloseThick, mdiQrcodeScan, mdiPrinter3dNozzle, mdiPackageVariantClosed } from '@mdi/js'
 import EmergencyStopDialog from '@/components/dialogs/EmergencyStopDialog.vue'
@@ -135,6 +140,7 @@ type uploadSnackbar = {
         PrinterSelector,
         PantheonLogo,
         TheNotificationMenu,
+        TheCloudSiteTabs,
     },
 })
 export default class TheTopbar extends Mixins(BaseMixin) {

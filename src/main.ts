@@ -8,6 +8,8 @@ import store from '@/store'
 import router from '@/plugins/router'
 import { WebSocketPlugin } from '@/plugins/webSocketClient'
 import { fleetDaemonClient } from '@/plugins/fleetDaemonClient'
+import { fleetCloudClient } from '@/plugins/fleetCloudClient'
+import { isFleetCloud } from '@/plugins/cloudMode'
 // vue-observe-visibility
 import { ObserveVisibility } from 'vue-observe-visibility'
 //vue-meta
@@ -87,11 +89,22 @@ const initLoad = async () => {
     }
 
     const url = store.getters['socket/getWebsocketUrl']
+    // Install the plugin in both modes so Vue.$socket is always defined, but in
+    // cloud mode never connect it — there is no Moonraker across the internet.
     Vue.use(WebSocketPlugin, { url, store })
-    if (store?.state?.instancesDB === 'moonraker') Vue.$socket.connect()
 
-    // Start persistent fleet daemon WebSocket connection
-    fleetDaemonClient.start()
+    if (isFleetCloud) {
+        // No Moonraker socket/init in cloud mode: mark the app ready and poll
+        // the same-origin /api adapter instead (FLEET_ONLINE_HANDOFF.md §5.5)
+        store.commit('socket/setConnected')
+        store.commit('socket/removeInitModule', 'server')
+        fleetCloudClient.start()
+    } else {
+        if (store?.state?.instancesDB === 'moonraker') Vue.$socket.connect()
+
+        // Start persistent fleet daemon WebSocket connection
+        fleetDaemonClient.start()
+    }
 }
 
 initLoad().then(() =>

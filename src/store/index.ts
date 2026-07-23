@@ -15,6 +15,7 @@ import { farm } from '@/store/farm'
 import { editor } from '@/store/editor'
 import { gcodeviewer } from '@/store/gcodeviewer'
 import { fleet } from '@/store/fleet'
+import { cloud } from '@/store/cloud'
 
 Vue.use(Vuex)
 
@@ -42,6 +43,7 @@ export default new Vuex.Store({
         editor,
         gcodeviewer,
         fleet,
+        cloud,
     },
     getters: getters,
     mutations: mutations,

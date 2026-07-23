@@ -151,7 +151,12 @@ export default class NavigationMixin extends Mixins(BaseMixin) {
         })
     }
 
+    // v1 cloud panels only: farm map + fleet history/parts/analytics + spools.
+    // Archive and gcode views have no cross-site byte path yet (handoff §5.4/§7).
+    private readonly cloudRoutes = ['dashboard', 'farm', 'fleet-history', 'spool-management']
+
     showInNavi(route: AppRoute): boolean {
+        if (this.isFleetCloud && !this.cloudRoutes.includes(route.name ?? '')) return false
         if (['shutdown', 'error', 'disconnected'].includes(this.klippy_state) && !route.alwaysShow) return false
         else if (route.title === 'Webcam' && this.webcamCount === 0) return false
         else if (route.moonrakerComponent && !this.moonrakerComponents.includes(route.moonrakerComponent)) return false
