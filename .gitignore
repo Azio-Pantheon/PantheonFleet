@@ -23,3 +23,5 @@ components.d.ts
 
 .vs/
 src/assets/sample-config.yml
+.vercel
+.env*
