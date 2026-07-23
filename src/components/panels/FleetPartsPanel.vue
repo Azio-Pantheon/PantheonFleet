@@ -24,7 +24,7 @@
                 <v-card class="pa-2" style="max-height: 400px; overflow-y: auto">
                     <v-card-subtitle class="pa-1 caption font-weight-bold">Visible Columns</v-card-subtitle>
                     <v-checkbox
-                        v-for="col in allHeaders"
+                        v-for="col in toggleableHeaders"
                         :key="col.value"
                         :label="col.text"
                         :input-value="visibleColumns.includes(col.value)"
@@ -1109,6 +1109,11 @@ export default class FleetPartsPanel extends Mixins(BaseMixin) {
             headers = [{ text: 'Site', value: 'site', sortable: true }, ...headers]
         }
         return headers
+    }
+
+    /** Columns offered in the visibility menu — Site is always shown, so toggling it would do nothing. */
+    get toggleableHeaders() {
+        return this.allHeaders.filter((h) => h.value !== 'site')
     }
 
     get devColumnValues(): string[] {
