@@ -57,8 +57,8 @@
                     <span class="area-label" :style="bayDoorLabelStyle">Bay Door</span>
                 </template>
 
-                <!-- Grid lines -->
-                <div class="grid-lines" :style="gridLinesStyle"></div>
+                <!-- Grid lines (schematic sites only; floor-plan sites keep the grid invisible) -->
+                <div v-if="geometry.showGridLines" class="grid-lines" :style="gridLinesStyle"></div>
 
                 <!-- Drawing overlay (over the grid area) -->
                 <map-drawing-overlay class="draw-layer" :style="drawLayerStyle"
@@ -360,6 +360,8 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
             width: this.gridW + 'px',
             height: this.gridH + 'px',
             backgroundImage: `url(${this.geometry.floorPlanImage})`,
+            backgroundSize: this.geometry.floorPlanFit,
+            backgroundPosition: '0 0',
         }
     }
 
@@ -667,7 +669,6 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     position: absolute;
     background-size: 100% 100%;
     background-repeat: no-repeat;
-    opacity: 0.85;
     pointer-events: none;
     z-index: 0;
 }

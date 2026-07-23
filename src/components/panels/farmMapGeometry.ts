@@ -34,6 +34,12 @@ export interface FarmMapGeometry {
     hasGround: boolean
     /** Floor-plan image stretched behind the farm grid (old building), or null. */
     floorPlanImage: string | null
+    /** CSS background-size for the floor plan (old Farm.vue used '110% 170%',
+     *  and the saved Vancouver grid positions assume that rendering). */
+    floorPlanFit: string
+    /** Draw the schematic cell-grid overlay. Off for floor-plan-image sites —
+     *  printers still snap to the (invisible) grid for positioning. */
+    showGridLines: boolean
 }
 
 const SF: FarmMapGeometry = {
@@ -51,6 +57,8 @@ const SF: FarmMapGeometry = {
     ],
     hasGround: true,
     floorPlanImage: null,
+    floorPlanFit: '100% 100%',
+    showGridLines: true,
 }
 
 const PANTHEONFLEET: FarmMapGeometry = {
@@ -64,6 +72,8 @@ const PANTHEONFLEET: FarmMapGeometry = {
     groundRooms: [],
     hasGround: false,
     floorPlanImage: floorPlanPantheon,
+    floorPlanFit: '110% 170%',
+    showGridLines: false,
 }
 
 const GEOMETRY_BY_SITE: Record<string, FarmMapGeometry> = {
