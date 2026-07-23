@@ -14,12 +14,19 @@
 >   `CREATE VIEW` (no Neon-side setup); DDL kept in `sql/` for ad-hoc use.
 > - **Extras**: topbar camera QR lookup; per-site floor plans (SF schematic /
 >   Vancouver `NewBuilding cropped.png`).
+>
+> **UPDATE (2026-07-23): fleet_daemon Track 2 landed** — each site's gcode library
+> now lives on its NAS and a directory watcher mirrors the library listing to
+> Neon's `cloud_gcode_files` (both sites; two-way NAS ShareSync being paired).
+> The **read-only gcode library browser** the owner approved as "ships with
+> Track 2" is therefore unblocked as the next increment for the live app — NOT
+> yet built. Spec: `cloud_gcode_files` in §4 + the `GET /api/gcodes` row in §5.3.
 
 Implementation handoff. Written 2026-07-22 after planning with the owner (Azi). This repo (branch `Fleet_online`) is the Fleet_Mainsail fork; the goal is deploying it on Vercel as a **read-only, two-site** cloud app backed by the Neon aggregate that both sites' fleet_daemons already populate. Companion docs in the fleet_daemon repo: `MULTISITE_HANDOFF.md` (§6.5 scope, §6.8 dedup, §6.10–6.13) and `ARCHITECTURE.md`.
 
 ## 1. Context — what already exists and works
 
-- Two fleet sites run `fleet_daemon` (Python, port 8090): site ids **`pantheonfleet`** (~33 printers) and **`sf`**. Both sync outbound to one **Neon** Postgres (project endpoint `ep-sparkling-frost-awij5z4z`, us-east-1, PG 18): live status every 30s, print history every 60s, map metadata and spool mirrors on change. Deployed and verified in production 2026-07-22.
+- Two fleet sites run `fleet_daemon` (Python, port 8090): site ids **`pantheonfleet`** (Vancouver, ~33 printers) and **`sf`** (San Francisco, ~16). Both sync outbound to one **Neon** Postgres (project endpoint `ep-sparkling-frost-awij5z4z`, us-east-1, PG 18): live status every 30s, print history every 60s, map metadata / spool / gcode-listing mirrors on change. Deployed and verified in production 2026-07-22/23 (Track 2 — NAS-backed gcode libraries + `cloud_gcode_files` — landed 2026-07-23).
 - This frontend, running locally at each site, talks to its site's fleet_daemon over HTTP + WS (`src/plugins/fleetDaemonClient.ts`). The complete daemon⇄frontend contract was inventoried 2026-07-22 — the relevant read surface is reproduced in §4 below.
 - Owner accounts: Vercel ready; Neon Launch plan. The Neon endpoint is kept awake 24/7 by the daemons (~$19/mo fixed) — **browser reads are marginal-zero cost**, so live polling is fine (see §6.5 cost note in MULTISITE_HANDOFF.md).
 
@@ -56,6 +63,7 @@ The adapter serves the **same response shapes** the frontend already consumes fr
 - **`cloud_fleet_status`** `(site, printer_hostname, printer_model, payload JSONB, updated_at)` PK `(site, printer_hostname)`. `payload` is exactly the slim WS shape the UI already consumes: `{print_stats:{state,filename}, virtual_sdcard:{progress}, toolhead:{filament_type,nozzle_size,remaining_weight,used_weight}, webhooks:{state,state_message}, fleet_to_printer_ws}`.
 - **`cloud_print_history`** `(site, id UUID, <every fleet_print_history column>, synced_at)` PK `(site,id)`. Base rows have `qr_code IS NULL`; part rows have unique non-null `qr_code`. Indexed: `(site, start_time DESC)`, `(qr_code)`, `(status)`, `(qc_status)`.
 - **`cloud_remoteprinters`** `(site, printer_id, meta JSONB, updated_at)` PK `(site, printer_id)`. `meta` = the verbatim GUI record: `{hostname, port, position:{x,y}, gridPosition:{x,y}, printerModel, location:'farm'|'ground', settings}` — this is what `src/store/gui/remoteprinters` holds locally.
+- **`cloud_gcode_files`** `(site PK, listing JSONB, updated_at)` — added 2026-07-23. `listing` = array of `{filename (relative path), is_directory, size, modified_epoch}` covering the whole library tree, refreshed by each daemon's directory watcher within ~60s of any change (including files arriving via ShareSync from the other site).
 - **`cloud_vendor` / `cloud_filament` / `cloud_spool`** `(site, id INT, data JSONB, synced_at)` PK `(site,id)`. `data` = `row_to_json` of the local row. Spool fields the UI reads: `id, qr_code, initial_weight, used_weight, remaining_weight, loaded_on_printer, location, lot_nr, archived, filament_id`; filament: `id, vendor_id, name, material, color_hex, ...`; vendor: `id, name`.
 
 **Dedup view (create once in Neon — DDL below, from fleet_daemon §6.8):** a printer that moved sites carries duplicate history. Keep the earliest-collected copy of each base row, attribute to the printer's *current* site for display:
@@ -108,6 +116,7 @@ LEFT JOIN cloud_fleet_status cfs
 | `GET /api/history/inspectors` | same | `SELECT DISTINCT qc_inspector ... WHERE qc_inspector IS NOT NULL`. |
 | `GET /api/spool/vendors?site=`, `/api/spool/filaments?site=`, `/api/spool/spools?site=` | `GET /spool/*` lists | Unpack `data` JSONB from the mirrors; reproduce the joined shapes the panels render (spool rows joined with filament name/material/color + vendor name — join in SQL on `(site, filament_id)` / `(site, vendor_id)`). |
 | `GET /api/spool/lookup/:qr?site=` | `GET /spool/lookup/{qr}` | Return `{spool}` with nested `filament.vendor` like the local endpoint; used by part-detail. QR codes are globally unique so `site` is optional. |
+| `GET /api/gcodes?site=&path=` | `GET /gcodes` | **Next increment (2026-07-23, not yet built).** Serve from `cloud_gcode_files.listing`: filter the flat tree to one directory level for `path`; return the local endpoint's shape (`{files, storage_available: true}`, mapping `modified_epoch` → the `modified`/`age_days` fields the panel renders; `cached_on` always `[]`, `disk_usage` null). Read-only browsing only; per-site (a `site` param fits the shipped always-cross-site convention poorly — the library is ShareSync-replicated so both sites converge to the same tree; showing one site's listing is fine). |
 
 Read-only: implement **no** POST/PATCH/DELETE besides `/api/login`.
 
@@ -137,8 +146,8 @@ Build-time flag `VUE_APP_FLEET_READONLY=1` (set in Vercel env). When set, hide/d
 
 ## 7. Out of scope (v1)
 
-- Job start / any command channel (fleet_daemon §6.13 sketch exists — future).
+- Job start / any command channel (fleet_daemon §6.13 sketch exists — future; when built, the gcode browser becomes its file picker).
 - Archive panel + archive/telemetry file downloads (no cross-site byte path yet).
-- Gcode browser + download queue views (fleet_daemon Track 2, §6.12).
+- ~~Gcode browser~~ (unblocked 2026-07-23 — see the STATUS banner; the *listing* browser is the next increment). Gcode file contents/downloads + download-queue views stay out.
 - Spool/QC/QR/gcode mutations of any kind, add-printer, map editing.
 - Webcams, direct printer Moonraker access (never part of fleet mode anyway).

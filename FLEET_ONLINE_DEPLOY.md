@@ -125,7 +125,16 @@ from handoff §6 worth doing casually: analytics numbers vs a local
 `/history/analytics`, poll pause when the tab is backgrounded, offline badge
 within ~2 min of stopping a daemon, moved-printer dedup attribution.
 
-## Out of scope (unchanged from handoff §7)
+## Out of scope / next increments
 
-Job start/command channel, archive file relay + Archive panel, gcode browser/
-download queue, any mutations from the cloud.
+Still out: job start/command channel, archive file relay + Archive panel,
+gcode download queue, any mutations from the cloud.
+
+**Unblocked 2026-07-23 (owner-approved, not yet built): read-only gcode library
+browser.** fleet_daemon's Track 2 landed — both sites' gcode libraries are
+NAS-backed and each daemon's directory watcher mirrors the library listing into
+Neon `cloud_gcode_files` `(site PK, listing JSONB, updated_at)`, fresh within
+~60s of any change. Implementation: a `GET /api/gcodes?site=&path=` route
+serving the local `/gcodes` response shape from that listing (spec in
+`FLEET_ONLINE_HANDOFF.md` §5.3) + GcodefilesPanel visible read-only in cloud
+nav. Listing only — no file contents, no queue, no mutations.
