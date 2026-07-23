@@ -481,9 +481,9 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
         const socket = printer?.socket
         const hostname = socket?.hostname ?? ''
         if (!hostname) return
-        const protocol = window.location.protocol
+        // printers only serve plain http on the LAN — never inherit the page's https
         const webPort = socket?.webPort ?? 80
-        let url = protocol + '//' + hostname
+        let url = 'http://' + hostname
         if (webPort !== 80) url += ':' + webPort
         window.open(url)
     }

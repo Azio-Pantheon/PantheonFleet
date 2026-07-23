@@ -386,8 +386,8 @@ export default class FleetPrinterStatusPanel extends Mixins(BaseMixin) {
 
     clickPrinter(printer: any) {
         if (printer.socket?.isConnected) {
-            const protocol = window.location.protocol
-            let url = protocol + '//' + printer.socket.hostname
+            // printers only serve plain http on the LAN — never inherit the page's https
+            let url = 'http://' + printer.socket.hostname
             if (printer.socket.webPort && printer.socket.webPort !== 80) {
                 url += ':' + printer.socket.webPort
             }
