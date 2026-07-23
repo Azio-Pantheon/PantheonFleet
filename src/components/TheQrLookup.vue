@@ -5,7 +5,7 @@
             :icon="$vuetify.breakpoint.smAndDown"
             :text="$vuetify.breakpoint.mdAndUp"
             color="primary"
-            class="button-min-width-auto px-3"
+            class="button-min-width-auto px-3 qr-lookup-btn"
             title="Look up a part or spool by QR code"
             @click="openDialog">
             <v-icon :class="{ 'mr-md-2': $vuetify.breakpoint.mdAndUp }">{{ mdiMagnifyScan }}</v-icon>
@@ -247,9 +247,17 @@ export default class TheQrLookup extends Mixins(BaseMixin) {
 </script>
 
 <style scoped>
-/* stretch so the button fills the topbar height like its siblings */
+/* stretch so the button fills the topbar height like its siblings
+   (TheTopbar's scoped height rule can't reach into this component) */
 .qr-lookup-wrap {
     display: flex;
     align-self: stretch;
+}
+.qr-lookup-btn {
+    height: 100% !important;
+    max-height: none;
+}
+.qr-lookup-btn.v-btn--icon {
+    width: var(--topbar-icon-btn-width) !important;
 }
 </style>
