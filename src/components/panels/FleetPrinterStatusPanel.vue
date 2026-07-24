@@ -69,6 +69,7 @@ import SimplifiedPrinterMapPanel from '@/components/panels/SimplifiedPrinterMapP
 import MapDrawingOverlay from '@/components/panels/MapDrawingOverlay.vue'
 import Vue from 'vue'
 import { fleetDaemonClient } from '@/plugins/fleetDaemonClient'
+import { printerWebUrl } from '@/plugins/printerUrl'
 import { PrinterModel, SQUARE_PRINTER_MODELS, PRINTER_MODEL_HEIGHT_SCALE } from '@/store/gui/remoteprinters/types'
 import {
     mdiViewDashboard,
@@ -386,12 +387,8 @@ export default class FleetPrinterStatusPanel extends Mixins(BaseMixin) {
 
     clickPrinter(printer: any) {
         if (printer.socket?.isConnected) {
-            // printers only serve plain http on the LAN — never inherit the page's https
-            let url = 'http://' + printer.socket.hostname
-            if (printer.socket.webPort && printer.socket.webPort !== 80) {
-                url += ':' + printer.socket.webPort
-            }
-            window.open(url)
+            const url = printerWebUrl(printer.socket)
+            if (url) window.open(url)
         }
     }
 

@@ -122,6 +122,7 @@ import {
 } from '@/components/panels/farmPrinterStatus'
 import { PrinterModel, SQUARE_PRINTER_MODELS, PRINTER_MODEL_HEIGHT_SCALE } from '@/store/gui/remoteprinters/types'
 import { FarmMapGeometry, geometryForSite, localSiteId } from '@/components/panels/farmMapGeometry'
+import { printerWebUrl } from '@/plugins/printerUrl'
 
 type MapLocation = 'farm' | 'ground'
 
@@ -478,14 +479,8 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     }
 
     openPrinter(printer: any) {
-        const socket = printer?.socket
-        const hostname = socket?.hostname ?? ''
-        if (!hostname) return
-        // printers only serve plain http on the LAN — never inherit the page's https
-        const webPort = socket?.webPort ?? 80
-        let url = 'http://' + hostname
-        if (webPort !== 80) url += ':' + webPort
-        window.open(url)
+        const url = printerWebUrl(printer?.socket)
+        if (url) window.open(url)
     }
 
     // ---------- drag to place ----------

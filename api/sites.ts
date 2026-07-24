@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { handleError, query, requireAuth, requireGet, rowToDict } from './_lib'
+import { handleError, printerAccessDomains, query, requireAuth, requireGet, rowToDict } from './_lib'
 
 // Site list + derived online flag; drives the site tabs and offline badges.
+// Each row also carries printer_domain (the Cloudflare wildcard subdomain its
+// printers are reachable under, or null) so the map can build printer links.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         if (!requireGet(req, res) || !requireAuth(req, res)) return
@@ -11,7 +13,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             FROM cloud_sites
             ORDER BY site
         `)
-        res.status(200).json(rows.map(rowToDict))
+        const domains = printerAccessDomains()
+        res.status(200).json(
+            rows.map((row) => ({ ...rowToDict(row), printer_domain: domains[row.site] ?? null }))
+        )
     } catch (e) {
         handleError(res, e)
     }

@@ -51,6 +51,21 @@ export function verifySession(token: string): string | null {
     return Buffer.from(emailB64, 'base64url').toString()
 }
 
+/**
+ * PRINTER_ACCESS_DOMAINS: comma-separated `site=domain` pairs, e.g.
+ * `pantheonfleet=van.example.com,sf=sf.example.com`. Maps a Neon site id to
+ * the wildcard subdomain its printers are reachable under (Cloudflare Tunnel).
+ * Unset ⇒ empty map ⇒ frontend emits no printer links (safe no-op).
+ */
+export function printerAccessDomains(): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const pair of (process.env.PRINTER_ACCESS_DOMAINS ?? '').split(',')) {
+        const [site, domain] = pair.split('=').map((s) => s.trim())
+        if (site && domain) out[site] = domain
+    }
+    return out
+}
+
 /** ALLOWED_EMAILS: comma-separated exact emails and/or @domain entries. */
 export function emailAllowed(email: string): boolean {
     const entries = (process.env.ALLOWED_EMAILS ?? '')

@@ -110,6 +110,10 @@ The handoff's per-site tabs + "all sites" toggle evolved into:
   - `AUTH_SECRET` — random string signing session cookies
   - `VUE_APP_FLEET_CLOUD=1`, `VUE_APP_FLEET_READONLY=1` (build-time — changing
     them requires a redeploy)
+  - `PRINTER_ACCESS_DOMAINS` — internet printer access (below); `site=domain`
+    pairs, e.g. `pantheonfleet=van.<domain>,sf=sf.<domain>`. Unset ⇒ map clicks
+    no-op. Runtime (parsed in `api/sites.ts`) — redeploy the existing build, no
+    code change.
   - Legacy, unused, safe to delete: `DASHBOARD_PASSWORD`, `AUTH_SALT`
 - Auth env vars exist in **Production only**; add them to Preview if preview
   deploys are ever used.
@@ -124,6 +128,33 @@ parts/spools/QR lookup, Vancouver floor plan rendering. Remaining spot-checks
 from handoff §6 worth doing casually: analytics numbers vs a local
 `/history/analytics`, poll pause when the tab is backgrounded, offline badge
 within ~2 min of stopping a daemon, moved-printer dedup attribution.
+
+## Internet printer access (map click → local Mainsail) — app side done 2026-07-23, ops pending
+
+Beyond read-only: clicking a printer on the cloud map opens that printer's full
+local Mainsail (control, uploads, webcams) via a per-site **Cloudflare Tunnel +
+Cloudflare Access**. The daemon side (a `fleet_printer_gateway.py` reverse proxy
++ cloudflared on each Pi) lives in the fleet_daemon repo (GUIDE.md "Internet
+Printer Access"). This repo's shipped changes:
+
+- `api/_lib.ts` `printerAccessDomains()` parses `PRINTER_ACCESS_DOMAINS`;
+  `api/sites.ts` returns `printer_domain` per site (null when unset).
+- `src/store/cloud/` — `printer_domain` on `CloudSite` + getter
+  `cloud/getActiveSitePrinterDomain`.
+- `src/plugins/fleetCloudClient.ts` puts `accessDomain` on each printer's socket.
+- `src/plugins/printerUrl.ts` — shared builder used by BOTH map click handlers
+  (`FarmMapSection.openPrinter`, `FleetPrinterStatusPanel.clickPrinter`): cloud
+  mode → `https://<shortname>.<accessDomain>`; null domain → click no-ops; local
+  mode unchanged (`http://<host>`).
+
+**Tiered access:** the dashboard allowlist (`ALLOWED_EMAILS`, broad
+`@pantheondesign.com`) and the printer-access allowlist (the Cloudflare Access
+policy, a narrow explicit email list) are INDEPENDENT — a dashboard viewer not
+on the printer list gets Cloudflare's denied page on click. **Offboarding must
+touch both.** To go live: set `PRINTER_ACCESS_DOMAINS` on Vercel + redeploy, and
+complete the Cloudflare/gateway setup per the fleet_daemon runbook. Limit: CF
+free-plan 100 MB request cap (very large gcode uploads via LAN); printer webcam
+URLs must be relative to ride the tunnel.
 
 ## Out of scope / next increments
 

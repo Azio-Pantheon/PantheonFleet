@@ -4,6 +4,9 @@ export interface CloudSite {
     printer_count: number
     last_heartbeat: string | null
     daemon_started_at: string | null
+    // Cloudflare wildcard subdomain this site's printers are reachable under
+    // (e.g. 'van.example.com'); null when internet printer access isn't set up.
+    printer_domain: string | null
 }
 
 export interface CloudState {

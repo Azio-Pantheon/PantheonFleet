@@ -30,6 +30,9 @@ export const cloud: Module<CloudState, RootState> = {
         getActiveSiteOnline: (state) => {
             return state.sites.find((s) => s.site === state.activeSite)?.online ?? false
         },
+        getActiveSitePrinterDomain: (state) => {
+            return state.sites.find((s) => s.site === state.activeSite)?.printer_domain ?? null
+        },
     },
     mutations: {
         setSites(state, sites: CloudSite[]) {
