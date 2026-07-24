@@ -105,6 +105,9 @@ class FleetCloudClient {
                     hostname,
                     isConnected: true,
                     webPort: 80,
+                    // Cloudflare Tunnel domain for this site's printers (or null);
+                    // consumed by printerUrl.ts to build the "open Mainsail" link.
+                    accessDomain: store.getters['cloud/getActiveSitePrinterDomain'] ?? null,
                     position: meta?.position ?? { x: 400, y: 400 },
                     printerModel: meta?.printerModel ?? printer.printer_model ?? null,
                 },
