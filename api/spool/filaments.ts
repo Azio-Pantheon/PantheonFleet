@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             `SELECT f.data AS filament, v.data->>'name' AS vendor_name
              FROM cloud_filament f
              LEFT JOIN cloud_vendor v
-                    ON v.site = f.site AND v.id = (f.data->>'vendor_id')::int
+                    ON v.id = (f.data->>'vendor_id')::int
              ${where}
              ORDER BY f.id`,
             params

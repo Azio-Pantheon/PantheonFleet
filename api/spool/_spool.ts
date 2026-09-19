@@ -1,11 +1,17 @@
 // Shared spool row shaping for /api/spool/spools and /api/spool/lookup/[qr].
 // Reproduces fleet_daemon's _SPOOL_SELECT joined row (s.* + filament/vendor
 // aliases) from the cloud_spool/cloud_filament/cloud_vendor JSONB mirrors.
+//
+// Joins are on id ALONE (not (site, id)): since 2026-09 the spool inventory
+// is one cross-site dataset with globally unique ids (per-site SERIAL ranges),
+// and each daemon mirrors a spool under its PHYSICAL site but a filament /
+// vendor under the site that CREATED it — so a spool at SF using a
+// Vancouver-created filament lives in different site partitions.
 
 export const SPOOL_JOIN = `
     FROM cloud_spool s
-    JOIN cloud_filament f ON f.site = s.site AND f.id = (s.data->>'filament_id')::int
-    LEFT JOIN cloud_vendor v ON v.site = f.site AND v.id = (f.data->>'vendor_id')::int
+    JOIN cloud_filament f ON f.id = (s.data->>'filament_id')::int
+    LEFT JOIN cloud_vendor v ON v.id = (f.data->>'vendor_id')::int
 `
 
 export const SPOOL_SELECT = `
