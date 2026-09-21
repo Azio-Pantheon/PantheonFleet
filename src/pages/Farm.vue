@@ -6,6 +6,12 @@
                 <h2 class="fleet-title">Fleet Map</h2>
                 <span class="fleet-total">{{ totalPrinterCount }} total</span>
                 <div class="status-counters">
+                    <span
+                        class="status-counter status-counter--total"
+                        :title="`${totalWorkerCount} of ${totalPrinterCount} printers are enabled as fleet workers`">
+                        <v-icon x-small color="orange">{{ mdiHammer }}</v-icon>
+                        Workers {{ totalWorkerCount }}
+                    </span>
                     <span v-for="s in totalStatusList" :key="'total-' + s.key" class="status-counter">
                         <span class="status-dot" :class="{ square: s.key === 'error' || s.key === 'printing' }"
                               :style="{ backgroundColor: s.color }"></span>
@@ -15,16 +21,31 @@
             </div>
         </div>
 
-        <!-- Print Farm map -->
-        <farm-map-section location="farm" name="Print Farm" class="mb-8" />
+        <!-- Print Farm map (worker count + stickers come from each printer's fleet_worker payload) -->
+        <farm-map-section
+            location="farm"
+            name="Print Farm"
+            show-workers
+            :worker-hostnames="enabledHostnames"
+            :attention-hostnames="attentionHostnames"
+            :attention-reasons="attentionReasons"
+            class="mb-8" />
 
         <!-- Ground Floor map (only for sites that have one) -->
-        <farm-map-section v-if="showGround" location="ground" name="Ground Floor" />
+        <farm-map-section
+            v-if="showGround"
+            location="ground"
+            name="Ground Floor"
+            show-workers
+            :worker-hostnames="enabledHostnames"
+            :attention-hostnames="attentionHostnames"
+            :attention-reasons="attentionReasons" />
     </div>
 </template>
 
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
+import { mdiHammer } from '@mdi/js'
 import BaseMixin from '@/components/mixins/base'
 import FarmMapSection from '@/components/panels/FarmMapSection.vue'
 import {
@@ -32,6 +53,11 @@ import {
     PrinterStatus,
 } from '@/components/panels/farmPrinterStatus'
 import { geometryForSite, localSiteId } from '@/components/panels/farmMapGeometry'
+import {
+    enabledWorkerHostnames,
+    attentionWorkerHostnames,
+    attentionWorkerReasons,
+} from '@/components/panels/fleetWorkerAttention'
 
 @Component({
     components: {
@@ -39,6 +65,8 @@ import { geometryForSite, localSiteId } from '@/components/panels/farmMapGeometr
     },
 })
 export default class PageFarm extends Mixins(BaseMixin) {
+    mdiHammer = mdiHammer
+
     // Status color/label vocabulary (matches farmPrinterStatus + FarmPrinterGridPanel)
     readonly STATUS_META: Record<PrinterStatus, { color: string; label: string }> = {
         printing: { color: '#2196f3', label: 'Printing' },
@@ -55,6 +83,25 @@ export default class PageFarm extends Mixins(BaseMixin) {
 
     get totalPrinterCount(): number {
         return Object.keys(this.fleetDaemonPrinters).length
+    }
+
+    // Worker state rides in each printer's payload (fleet_worker), so it is
+    // already per-site in cloud mode and needs no extra endpoint.
+    get enabledHostnames(): string[] {
+        return enabledWorkerHostnames(this.fleetDaemonPrinters)
+    }
+
+    get attentionHostnames(): string[] {
+        return attentionWorkerHostnames(this.fleetDaemonPrinters)
+    }
+
+    get attentionReasons(): Record<string, string> {
+        return attentionWorkerReasons(this.fleetDaemonPrinters)
+    }
+
+    /** Printers currently enabled as workers (same figure as the on-site Workers map header). */
+    get totalWorkerCount(): number {
+        return this.enabledHostnames.length
     }
 
     // Ground Floor section: sites without one (old building) hide it, unless a
@@ -114,6 +161,11 @@ export default class PageFarm extends Mixins(BaseMixin) {
     gap: 5px;
     font-size: 12px;
     font-weight: 500;
+}
+.status-counter--total {
+    font-weight: 700;
+    padding-right: 12px;
+    border-right: 1px solid rgba(128, 128, 128, 0.4);
 }
 .status-dot {
     width: 9px;

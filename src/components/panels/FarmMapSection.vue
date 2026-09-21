@@ -26,8 +26,13 @@
             <span class="edit-hint">{{ editHint }}</span>
         </div>
 
-        <!-- Per-section status legend -->
+        <!-- Per-section status legend (leads with the worker total when workers are shown) -->
         <div class="status-counters mb-3">
+            <span v-if="showWorkers" class="status-counter status-counter--total"
+                  :title="`${workerCount} of ${printerCount} printers in this section are enabled as fleet workers`">
+                <v-icon x-small color="orange">{{ mdiHammer }}</v-icon>
+                Workers {{ workerCount }}
+            </span>
             <span v-for="s in activeStatusList" :key="'active-' + s.key" class="status-counter">
                 <span class="status-dot" :class="{ square: s.key === 'error' || s.key === 'printing' }"
                       :style="{ backgroundColor: s.color }"></span>
@@ -89,11 +94,23 @@
                             {{ markerGlyph(printer) }}
                         </span>
                     </div>
+                    <!-- Worker stickers: flashing "!" when the worker needs attention, else the hammer -->
+                    <span v-if="showWorkers && needsAttention(hostname)" class="worker-sticker attention-sticker"
+                          :title="attentionReason(hostname) || 'Worker needs attention'">
+                        <v-icon size="13" color="#fff">{{ mdiExclamationThick }}</v-icon>
+                    </span>
+                    <span v-else-if="showWorkers && isWorker(hostname)" class="worker-sticker" title="Fleet worker">
+                        <v-icon size="12" color="#fff" class="worker-hammer">{{ mdiHammer }}</v-icon>
+                    </span>
                 </div>
 
                 <!-- Tooltip -->
                 <div v-if="hoveredPrinter" class="tooltip" :style="tooltipStyle">
                     <p>{{ hoveredPrinter.socket.hostname }}: {{ hoveredPrinter.print_stats?.state || 'Unknown' }}</p>
+                    <p v-if="showWorkers">Fleet worker: {{ isWorker(hoveredPrinter.socket.hostname) ? 'yes' : 'no' }}</p>
+                    <p v-if="showWorkers && needsAttention(hoveredPrinter.socket.hostname)" class="attention-reason">
+                        <strong>Needs attention:</strong> {{ attentionReason(hoveredPrinter.socket.hostname) || 'see the Workers list' }}
+                    </p>
                     <p>IsConnected: {{ hoveredPrinter.socket.isConnected }}</p>
                     <p>Filament: {{ hoveredPrinter.toolhead?.filament_type || 'N/A' }}</p>
                     <p>Nozzle: {{ hoveredPrinter.toolhead?.nozzle_size || 'N/A' }}</p>
@@ -123,6 +140,7 @@ import {
 import { PrinterModel, SQUARE_PRINTER_MODELS, PRINTER_MODEL_HEIGHT_SCALE } from '@/store/gui/remoteprinters/types'
 import { FarmMapGeometry, geometryForSite, localSiteId } from '@/components/panels/farmMapGeometry'
 import { printerWebUrl } from '@/plugins/printerUrl'
+import { mdiExclamationThick, mdiHammer } from '@mdi/js'
 
 type MapLocation = 'farm' | 'ground'
 
@@ -135,6 +153,19 @@ type MapLocation = 'farm' | 'ground'
 export default class FarmMapSection extends Mixins(BaseMixin) {
     @Prop({ type: String, required: true }) readonly location!: MapLocation
     @Prop({ type: String, required: true }) readonly name!: string
+    /** Show the per-section worker count, hammer / attention stickers and tooltip lines. */
+    @Prop({ type: Boolean, default: false }) readonly showWorkers!: boolean
+    /** Hostnames currently enabled as fleet workers. */
+    @Prop({ type: Array, default: () => [] }) readonly workerHostnames!: string[]
+    /** Workers that could run a job but are blocked by low filament / not primed:
+     *  they get a flashing red "!" sticker instead of the hammer. */
+    @Prop({ type: Array, default: () => [] }) readonly attentionHostnames!: string[]
+    /** Scheduler reason per attention hostname (e.g. "filament 350g < 400g needed …"),
+     *  shown in the hover tooltip and the sticker title. */
+    @Prop({ type: Object, default: () => ({}) }) readonly attentionReasons!: Record<string, string>
+
+    mdiHammer = mdiHammer
+    mdiExclamationThick = mdiExclamationThick
 
     // Grid geometry — per-site (site tabs in cloud mode; VUE_APP_FLEET_SITE locally)
     readonly CELL = 46
@@ -252,6 +283,11 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
         return Object.entries(this.fleetDaemonPrinters).filter(
             ([hostname]) => this.getPrinterLocation(hostname) === this.location
         ) as [string, any][]
+    }
+
+    /** Printers in this section currently enabled as fleet workers. */
+    get workerCount(): number {
+        return this.activePrinterEntries.filter(([hostname]) => this.isWorker(hostname)).length
     }
 
     get printerCount(): number {
@@ -478,6 +514,22 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
         this.$root.$emit('open-settings', 'remote-printers')
     }
 
+    isWorker(hostname: string): boolean {
+        const h = (hostname || '').toLowerCase()
+        return this.workerHostnames.some((w) => w.toLowerCase() === h)
+    }
+
+    needsAttention(hostname: string): boolean {
+        const h = (hostname || '').toLowerCase()
+        return this.attentionHostnames.some((w) => w.toLowerCase() === h)
+    }
+
+    attentionReason(hostname: string): string | null {
+        const h = (hostname || '').toLowerCase()
+        const key = Object.keys(this.attentionReasons).find((k) => k.toLowerCase() === h)
+        return key ? this.attentionReasons[key] || null : null
+    }
+
     openPrinter(printer: any) {
         const url = printerWebUrl(printer?.socket)
         if (url) window.open(url)
@@ -611,6 +663,11 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     font-size: 12px;
     font-weight: 500;
 }
+.status-counter--total {
+    font-weight: 700;
+    padding-right: 12px;
+    border-right: 1px solid rgba(128, 128, 128, 0.4);
+}
 .status-dot {
     width: 9px;
     height: 9px;
@@ -717,6 +774,44 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
 .marker.draggable {
     cursor: move;
 }
+/* Worker stickers (same look as the on-site Jobs → Workers map). The badge
+   stays put; only the hammer glyph inside swings, pivoting at the end of its
+   handle. Base orientation is the mdi glyph turned 90° counter-clockwise. */
+@keyframes hammer-swing {
+    0% { transform: rotate(-130deg); }
+    40% { transform: rotate(-75deg); }
+    55% { transform: rotate(-82deg); }
+    100% { transform: rotate(-130deg); }
+}
+.worker-sticker {
+    position: absolute;
+    bottom: -5px;
+    right: -5px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f57c00;
+    border: 1.5px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 3;
+}
+@keyframes attention-flash {
+    0%, 100% { background: #d32f2f; box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.7), 0 1px 3px rgba(0, 0, 0, 0.5); }
+    50% { background: #ff5252; box-shadow: 0 0 0 6px rgba(211, 47, 47, 0), 0 1px 3px rgba(0, 0, 0, 0.5); }
+}
+.attention-sticker {
+    animation: attention-flash 0.8s ease-in-out infinite;
+}
+.worker-sticker >>> .worker-hammer {
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    animation: hammer-swing 0.8s ease-in-out infinite;
+}
 .marker-ring {
     position: absolute;
     animation: pulsering 1.6s ease-out infinite;
@@ -753,6 +848,11 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     font-size: 12px;
     line-height: 1.45;
     pointer-events: none;
+}
+.tooltip .attention-reason {
+    color: #ff8a80;
+    white-space: normal;
+    max-width: 300px;
 }
 .tooltip p {
     margin: 0;
