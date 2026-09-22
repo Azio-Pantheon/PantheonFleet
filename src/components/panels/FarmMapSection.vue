@@ -774,15 +774,7 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
 .marker.draggable {
     cursor: move;
 }
-/* Worker stickers (same look as the on-site Jobs → Workers map). The badge
-   stays put; only the hammer glyph inside swings, pivoting at the end of its
-   handle. Base orientation is the mdi glyph turned 90° counter-clockwise. */
-@keyframes hammer-swing {
-    0% { transform: rotate(-130deg); }
-    40% { transform: rotate(-75deg); }
-    55% { transform: rotate(-82deg); }
-    100% { transform: rotate(-130deg); }
-}
+/* Worker stickers (same look as the on-site Jobs → Workers map). */
 .worker-sticker {
     position: absolute;
     bottom: -5px;
@@ -807,10 +799,18 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
 .attention-sticker {
     animation: attention-flash 0.8s ease-in-out infinite;
 }
+/* Hammer swing: starts from the icon as drawn (head upper-right, handle to the
+   lower-left), strikes by turning 45° clockwise about a point halfway down the handle,
+   rebounds a touch, then rises slowly back to the drawn position. */
+@keyframes hammer-swing {
+    0% { transform: rotate(0deg); }
+    20% { transform: rotate(45deg); }
+    28% { transform: rotate(38deg); }
+    100% { transform: rotate(0deg); }
+}
 .worker-sticker >>> .worker-hammer {
-    transform: rotate(-90deg);
-    transform-origin: 50% 50%;
-    animation: hammer-swing 0.8s ease-in-out infinite;
+    transform-origin: 31% 69%;
+    animation: hammer-swing 1s ease-in-out infinite;
 }
 .marker-ring {
     position: absolute;
