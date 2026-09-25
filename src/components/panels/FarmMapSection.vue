@@ -33,6 +33,14 @@
                 <v-icon x-small color="orange">{{ mdiHammer }}</v-icon>
                 Workers {{ workerCount }}
             </span>
+            <span
+                v-if="showWorkers"
+                class="status-counter status-counter--attention"
+                :class="{ 'status-counter--attention-active': sectionAttentionHostnames.length > 0 }"
+                :title="sectionAttentionTitle">
+                <v-icon x-small :color="sectionAttentionHostnames.length ? 'white' : undefined">{{ mdiExclamationThick }}</v-icon>
+                {{ sectionAttentionHostnames.length }} need{{ sectionAttentionHostnames.length === 1 ? 's' : '' }} attention
+            </span>
             <span v-for="s in activeStatusList" :key="'active-' + s.key" class="status-counter">
                 <span class="status-dot" :class="{ square: s.key === 'error' || s.key === 'printing' }"
                       :style="{ backgroundColor: s.color }"></span>
@@ -141,6 +149,7 @@ import { PrinterModel, SQUARE_PRINTER_MODELS, PRINTER_MODEL_HEIGHT_SCALE } from 
 import { FarmMapGeometry, geometryForSite, localSiteId } from '@/components/panels/farmMapGeometry'
 import { printerWebUrl } from '@/plugins/printerUrl'
 import { mdiExclamationThick, mdiHammer } from '@mdi/js'
+import { attentionChipTitle } from '@/components/panels/fleetWorkerAttention'
 
 type MapLocation = 'farm' | 'ground'
 
@@ -288,6 +297,20 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     /** Printers in this section currently enabled as fleet workers. */
     get workerCount(): number {
         return this.activePrinterEntries.filter(([hostname]) => this.isWorker(hostname)).length
+    }
+
+    /** Blocked workers placed in this section (the page header counts the whole site). */
+    get sectionAttentionHostnames(): string[] {
+        return this.activePrinterEntries.map(([hostname]) => hostname).filter((h) => this.needsAttention(h))
+    }
+
+    get sectionAttentionTitle(): string {
+        const reasons: Record<string, string> = {}
+        this.sectionAttentionHostnames.forEach((h) => {
+            const r = this.attentionReason(h)
+            if (r) reasons[h] = r
+        })
+        return attentionChipTitle(this.sectionAttentionHostnames, reasons)
     }
 
     get printerCount(): number {
@@ -667,6 +690,19 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     font-weight: 700;
     padding-right: 12px;
     border-right: 1px solid rgba(128, 128, 128, 0.4);
+}
+/* "N need attention" chip: red when any enabled worker is blocked (not primed / low filament) */
+.status-counter--attention {
+    padding: 1px 8px;
+    border-radius: 11px;
+    border: 1px solid rgba(128, 128, 128, 0.5);
+    line-height: 18px;
+}
+.status-counter--attention-active {
+    background: #d32f2f;
+    border-color: #d32f2f;
+    color: #fff;
+    font-weight: 700;
 }
 .status-dot {
     width: 9px;

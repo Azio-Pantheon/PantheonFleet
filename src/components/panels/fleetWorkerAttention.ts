@@ -49,3 +49,9 @@ export function attentionWorkerReasons(printers: Record<string, any>): Record<st
     }
     return out
 }
+
+/** Hover text for a "N need attention" chip: `host: reason` per worker, or what the chip means when 0. */
+export function attentionChipTitle(hostnames: string[], reasons: Record<string, string>): string {
+    if (!hostnames.length) return 'Workers that could run a job but are blocked by low filament or not primed'
+    return hostnames.map((h) => (reasons[h] ? `${h}: ${reasons[h]}` : h)).join('\n')
+}
