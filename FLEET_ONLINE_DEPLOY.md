@@ -16,7 +16,7 @@ relative imports; `@neondatabase/serverless` over HTTP):
 | `GET/POST /api/login` | Sign in with Google (see Auth below) |
 | `GET /api/sites` | `cloud_sites` + derived `online` (heartbeat < 90s) |
 | `GET /api/status?site=` | live roster from `cloud_fleet_status` + `cloud_remoteprinters` meta — the only per-site read |
-| `GET /api/uptime?days=` | fleet daemon uptime timeline per site: `cloud_daemon_uptime` segments + `cloud_sync_outage` rows + `online` from `cloud_sites`; rendered by the Fleet Status page (`/status`) |
+| `GET /api/uptime?days=` | fleet daemon uptime timeline per site: `cloud_daemon_uptime` segments + `cloud_daemon_outage` rows grouped by component (`cloud_sync`, `nas`) + `online` / live `nas_available`, `nas_fail_since` from `cloud_sites`; rendered by the Fleet Status page (`/status`) |
 | `GET /api/history` | fleet_daemon `/history` params + optional `site`; records carry `site` = display_site |
 | `GET /api/history/analytics`, `/analytics/parts` | daemon aggregation SQL ported verbatim |
 | `GET /api/history/inspectors` | global |
@@ -34,7 +34,8 @@ implies read-only; `VUE_APP_FLEET_READONLY=1` alone = read-only chrome for local
 testing; local mode is untouched):
 
 - `src/pages/FleetStatus.vue` (`/status`, sidebar "Fleet Status") — status-page
-  style uptime per site (status.claude.com layout): `FleetUptimeTimeline.vue`
+  style uptime per site (status.claude.com layout), one row for the site's
+  fleet daemon and one for its NAS: `FleetUptimeTimeline.vue`
   derives per-day uptime and incidents from the daemon-life segments served by
   `/api/uptime` (green = no downtime, yellow = restart < 5 min or cloud-sync
   outage, red = ≥ 5 min down; hover for the day's incidents). Refreshes every

@@ -30,7 +30,9 @@
                     :segments="row.segments"
                     :outages="row.outages"
                     :days="days"
-                    :outages-are-downtime="row.outagesAreDowntime" />
+                    :outages-are-downtime="row.outagesAreDowntime"
+                    :outage-label="row.outageLabel"
+                    :down-label="row.downLabel" />
                 <div v-if="fetchedAt" class="caption text--secondary mt-3">
                     {{ $t('FleetStatus.Updated', { time: fetchedAt }) }}
                 </div>
@@ -44,7 +46,7 @@
  * Fleet Status — status-page style uptime for every fleet_daemon.
  *
  * Cloud build (VUE_APP_FLEET_CLOUD): GET /api/uptime returns one entry per
- * site from the Neon mirrors (cloud_daemon_uptime / cloud_sync_outage).
+ * site from the Neon mirrors (cloud_daemon_uptime / cloud_daemon_outage).
  * Local build: GET <fleet_daemon>/daemon/uptime returns this site's own
  * timeline straight from the daemon; if that request fails the daemon itself
  * is down, so the last known timeline is kept and shown as offline.
@@ -66,6 +68,17 @@ interface StatusRow {
     segments: UptimeSegment[]
     outages: SyncOutage[]
     outagesAreDowntime: boolean
+    outageLabel: string
+    downLabel: string
+}
+
+const NAS_DOWN_LABEL = 'Fleet daemon down — NAS state unknown'
+
+/** The rows one daemon contributes: itself, its cloud sync (local build only) and its NAS. */
+function withOpen(closed: SyncOutage[], openSince: string | null | undefined, now: string, error?: string | null): SyncOutage[] {
+    const out = [...closed]
+    if (openSince) out.push({ started_at: openSince, ended_at: now, error: error ?? null, ongoing: true })
+    return out
 }
 
 const REFRESH_MS = 60_000
@@ -135,56 +148,96 @@ export default class FleetStatus extends Mixins(BaseMixin) {
     private async loadCloud() {
         const { data } = await axios.get('/api/uptime', { params: { days: this.days } })
         this.now = data.now
-        this.rows = (data.sites ?? []).map((s: any) => ({
-            key: s.site,
-            title: `${siteLabel(s.site)} fleet daemon`,
-            subtitle: [s.host_name, s.printer_count != null ? `${s.printer_count} printers` : null]
-                .filter(Boolean)
-                .join(' · '),
-            online: s.online === true,
-            segments: s.segments ?? [],
-            outages: s.outages ?? [],
-            outagesAreDowntime: false,
-        }))
+        const rows: StatusRow[] = []
+        for (const s of data.sites ?? []) {
+            const label = siteLabel(s.site)
+            const segments: UptimeSegment[] = s.segments ?? []
+            const outages = s.outages ?? {}
+            const online = s.online === true
+            rows.push({
+                key: `${s.site}:daemon`,
+                title: `${label} fleet daemon`,
+                subtitle: [s.host_name, s.printer_count != null ? `${s.printer_count} printers` : null]
+                    .filter(Boolean)
+                    .join(' · '),
+                online,
+                segments,
+                outages: outages.cloud_sync ?? [],
+                outagesAreDowntime: false,
+                outageLabel: 'Cloud sync interrupted',
+                downLabel: '',
+            })
+            // NAS row only once the site's daemon has ever probed a NAS
+            if (s.nas_available !== null && s.nas_available !== undefined) {
+                rows.push({
+                    key: `${s.site}:nas`,
+                    title: `${label} NAS`,
+                    subtitle: 'Archive storage mount, probed by the fleet daemon',
+                    online,
+                    segments,
+                    // An open NAS outage is only known while the site heartbeat is fresh
+                    outages: withOpen(outages.nas ?? [], online ? s.nas_fail_since : null, data.now),
+                    outagesAreDowntime: true,
+                    outageLabel: 'NAS unreachable',
+                    downLabel: NAS_DOWN_LABEL,
+                })
+            }
+        }
+        this.rows = rows
     }
 
     private async loadLocal() {
         const { data } = await axios.get(`${this.baseUrl}/daemon/uptime`, { params: { days: this.days } })
         this.now = data.now
-        const segments: UptimeSegment[] = data.segments ?? []
-        const outages: SyncOutage[] = [...(data.outages ?? [])]
-        if (data.cloud_sync_fail_since) {
-            outages.push({
-                started_at: data.cloud_sync_fail_since,
-                ended_at: data.now,
-                error: data.cloud_sync_error ?? null,
-                ongoing: true,
-            })
-        }
-        const rows: StatusRow[] = [
-            {
-                key: 'daemon',
-                title: `Fleet daemon — ${siteLabel(data.site)}`,
-                subtitle: data.host_name ?? '',
-                online: true,
-                segments,
-                outages: [],
-                outagesAreDowntime: false,
-            },
-        ]
-        if (data.cloud_sync_enabled) {
-            rows.push({
-                key: 'cloudsync',
-                title: 'Cloud sync (Neon)',
-                subtitle: 'Live status + history mirrored to the cloud dashboard',
-                online: true,
-                segments,
-                outages,
-                outagesAreDowntime: true,
-            })
-        }
-        this.rows = rows
+        this.rows = localRows(data)
     }
+}
+
+/** Rows for one daemon's own snapshot (GET /daemon/uptime). */
+function localRows(data: any): StatusRow[] {
+    const segments: UptimeSegment[] = data.segments ?? []
+    const outages = data.outages ?? {}
+    const open = data.open_outages ?? {}
+    const rows: StatusRow[] = [
+        {
+            key: 'daemon',
+            title: `Fleet daemon — ${siteLabel(data.site)}`,
+            subtitle: data.host_name ?? '',
+            online: true,
+            segments,
+            outages: [],
+            outagesAreDowntime: false,
+            outageLabel: '',
+            downLabel: '',
+        },
+    ]
+    if (data.cloud_sync_enabled) {
+        rows.push({
+            key: 'cloudsync',
+            title: 'Cloud sync (Neon)',
+            subtitle: 'Live status + history mirrored to the cloud dashboard',
+            online: true,
+            segments,
+            outages: withOpen(outages.cloud_sync ?? [], open.cloud_sync?.started_at, data.now, open.cloud_sync?.error),
+            outagesAreDowntime: true,
+            outageLabel: 'Cloud sync interrupted',
+            downLabel: 'Fleet daemon down — cloud sync off',
+        })
+    }
+    if (data.nas_enabled) {
+        rows.push({
+            key: 'nas',
+            title: 'NAS',
+            subtitle: (data.nas_paths ?? []).join(' · ') || 'Archive storage mount',
+            online: true,
+            segments,
+            outages: withOpen(outages.nas ?? [], open.nas?.started_at, data.now, open.nas?.error),
+            outagesAreDowntime: true,
+            outageLabel: 'NAS unreachable',
+            downLabel: NAS_DOWN_LABEL,
+        })
+    }
+    return rows
 }
 </script>
 
