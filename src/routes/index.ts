@@ -20,6 +20,7 @@ import {
     mdiTimelapse,
     mdiWrench,
     mdiPrinter3dNozzle,
+    mdiHeartPulse,
 } from '@mdi/js'
 
 const routes: AppRoute[] = [
@@ -97,6 +98,16 @@ const routes: AppRoute[] = [
         showInNavi: true,
         position: 60,
         fullscreen: true,
+    },
+    {
+        name: 'fleet-status',
+        title: 'Fleet Status',
+        path: '/status',
+        icon: mdiHeartPulse,
+        component: () => import('../pages/FleetStatus.vue'),
+        alwaysShow: true,
+        showInNavi: true,
+        position: 64,
     },
     {
         name: 'fleet-history',

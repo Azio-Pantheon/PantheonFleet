@@ -270,6 +270,13 @@
         "Used": "Used",
         "View3D": "View 3D"
     },
+    "FleetStatus": {
+        "Description": "Uptime of the fleet daemon(s) over the selected window. Each bar is one day: green = no downtime, yellow = a brief restart or an interrupted cloud sync, red = an outage of 5 minutes or more. Hover a bar for details.",
+        "NoSites": "No fleet daemon has reported yet.",
+        "Refresh": "Refresh",
+        "Title": "Fleet Status",
+        "Updated": "Updated {time} · refreshes every minute while this tab is visible"
+    },
     "FullscreenUpload": {
         "CannotUploadFile": "Cannot upload file!",
         "DropFilesToUploadFiles": "Drop files to upload"
@@ -814,7 +821,8 @@
         "Webcam": "Webcam",
         "Jobs": "Jobs",
         "Fleet History": "Fleet History",
-        "Spools": "Spools"
+        "Spools": "Spools",
+        "Fleet Status": "Fleet Status"
     },
     "ScrewsTiltAdjust": {
         "Accept": "accept",

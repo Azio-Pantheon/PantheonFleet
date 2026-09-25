@@ -16,6 +16,7 @@ relative imports; `@neondatabase/serverless` over HTTP):
 | `GET/POST /api/login` | Sign in with Google (see Auth below) |
 | `GET /api/sites` | `cloud_sites` + derived `online` (heartbeat < 90s) |
 | `GET /api/status?site=` | live roster from `cloud_fleet_status` + `cloud_remoteprinters` meta — the only per-site read |
+| `GET /api/uptime?days=` | fleet daemon uptime timeline per site: `cloud_daemon_uptime` segments + `cloud_sync_outage` rows + `online` from `cloud_sites`; rendered by the Fleet Status page (`/status`) |
 | `GET /api/history` | fleet_daemon `/history` params + optional `site`; records carry `site` = display_site |
 | `GET /api/history/analytics`, `/analytics/parts` | daemon aggregation SQL ported verbatim |
 | `GET /api/history/inspectors` | global |
@@ -32,6 +33,13 @@ for ad-hoc use: `sql/cloud_print_history_deduped.sql`.
 implies read-only; `VUE_APP_FLEET_READONLY=1` alone = read-only chrome for local
 testing; local mode is untouched):
 
+- `src/pages/FleetStatus.vue` (`/status`, sidebar "Fleet Status") — status-page
+  style uptime per site (status.claude.com layout): `FleetUptimeTimeline.vue`
+  derives per-day uptime and incidents from the daemon-life segments served by
+  `/api/uptime` (green = no downtime, yellow = restart < 5 min or cloud-sync
+  outage, red = ≥ 5 min down; hover for the day's incidents). Refreshes every
+  minute while visible. The same component + page (local variant reading
+  `<daemon>/daemon/uptime`) lives in the Mainsail repo at `/fleet-status`.
 - `src/plugins/fleetCloudClient.ts` polls `/api/sites` + `/api/status?site=<active>`
   every 30s **only while the tab is visible** (immediate poll on refocus),
   commits the same `farm/SET_FLEET_DAEMON_PRINTER` payloads the WS handler
