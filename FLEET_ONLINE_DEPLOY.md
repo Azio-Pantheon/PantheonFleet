@@ -33,7 +33,8 @@ for ad-hoc use: `sql/cloud_print_history_deduped.sql`.
 implies read-only; `VUE_APP_FLEET_READONLY=1` alone = read-only chrome for local
 testing; local mode is untouched):
 
-- `src/pages/FleetStatus.vue` (`/status`, sidebar "Fleet Status") — status-page
+- `src/pages/FleetStatus.vue` (`/status`, sidebar "Fleet Status"; the cloud sidebar
+  only lists routes named in `navigation.ts` `cloudRoutes` — add new pages there too) — status-page
   style uptime per site (status.claude.com layout), one row for the site's
   fleet daemon and one for its NAS: `FleetUptimeTimeline.vue`
   derives per-day uptime and incidents from the daemon-life segments served by

@@ -151,9 +151,11 @@ export default class NavigationMixin extends Mixins(BaseMixin) {
         })
     }
 
-    // v1 cloud panels only: farm map + fleet history/parts/analytics + spools.
-    // Archive and gcode views have no cross-site byte path yet (handoff §5.4/§7).
-    private readonly cloudRoutes = ['dashboard', 'farm', 'fleet-history', 'spool-management']
+    // Cloud sidebar allowlist: farm map + fleet history/parts/analytics + spools
+    // + the daemon/NAS uptime page. Archive and gcode views have no cross-site
+    // byte path yet (handoff §5.4/§7). A new cloud page must be added HERE as
+    // well as in routes/index.ts, or it is routable but invisible.
+    private readonly cloudRoutes = ['dashboard', 'farm', 'fleet-history', 'fleet-status', 'spool-management']
 
     showInNavi(route: AppRoute): boolean {
         if (this.isFleetCloud && !this.cloudRoutes.includes(route.name ?? '')) return false
