@@ -17,7 +17,7 @@
                         <v-icon small color="blue">{{ mdiPlayCircle }}</v-icon> Printing: {{ printerStatusCounts.printing }}
                     </span>
                     <span class="status-counter complete" v-if="printerStatusCounts.complete > 0">
-                        <v-icon small color="blue">{{ mdiCheckboxMarkedCircle }}</v-icon> Complete: {{ printerStatusCounts.complete }}
+                        <v-icon small color="#6E5684">{{ mdiCheckboxMarkedCircle }}</v-icon> Complete: {{ printerStatusCounts.complete }}
                     </span>
                     <span class="status-counter error" v-if="printerStatusCounts.error > 0">
                         <v-icon small color="red">{{ mdiAlertCircle }}</v-icon> Error: {{ printerStatusCounts.error }}
@@ -466,7 +466,7 @@ export default class FleetPrinterStatusPanel extends Mixins(BaseMixin) {
 }
 
 .status-counter.complete {
-    color: #1976d2;
+    color: #6E5684;
 }
 
 .status-counter.error {

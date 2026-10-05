@@ -199,7 +199,7 @@ export default class FarmMapSection extends Mixins(BaseMixin) {
     readonly STATUS_META: Record<PrinterStatus, { color: string; label: string }> = {
         printing: { color: '#2196f3', label: 'Printing' },
         ready: { color: 'hsl(90, 100%, 32%)', label: 'Ready' },
-        complete: { color: '#1976d2', label: 'Complete' },
+        complete: { color: '#6E5684', label: 'Complete' },
         error: { color: '#d32f2f', label: 'Error' },
         disconnected: { color: '#8a8a8a', label: 'Offline' },
     }
