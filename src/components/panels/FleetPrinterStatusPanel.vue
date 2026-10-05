@@ -329,7 +329,7 @@ export default class FleetPrinterStatusPanel extends Mixins(BaseMixin) {
         if (state === 'error' || state === 'paused' || state === 'cancelled') {
             color = 'red'
         } else if (state === 'complete') {
-            color = 'blue'
+            color = '#6E5684'
         } else if (state === 'standby') {
             color = 'hsl(90, 100%, 32%)'
         }
