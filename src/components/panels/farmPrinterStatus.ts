@@ -77,7 +77,7 @@ export function getStatusBorderStyle(
 
     let color = 'gray'
     if (state === 'error' || state === 'paused' || state === 'cancelled') color = 'red'
-    else if (state === 'complete') color = '#6E5684'
+    else if (state === 'complete') color = '#9B86C4'
     else if (state === 'standby') color = 'hsl(90, 100%, 32%)'
 
     return { ...base, border: `${borderEm}em solid ${color}` }
